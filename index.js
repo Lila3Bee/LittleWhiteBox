@@ -43,13 +43,49 @@ window.isXiaobaixEnabled = isXiaobaixEnabled;
 // 扩展更新检查相关变量
 let updateCheckPerformed = false;
 
+// 导出测试函数到全局作用域，方便调试
+window.testLittleWhiteBoxUpdate = async function() {
+    console.log('[小白X] 手动触发更新检查测试');
+    updateCheckPerformed = false; // 重置标志
+    await performExtensionUpdateCheck();
+};
+
+window.testUpdateUI = function() {
+    console.log('[小白X] 手动触发UI更新测试');
+    updateExtensionHeaderWithUpdateNotice();
+};
+
 /**
  * 获取扩展类型
  * @param {string} extensionName 扩展名称
  * @returns {string} 扩展类型
  */
 function getExtensionType(extensionName) {
-    // 对于第三方扩展，通常是 'local' 类型
+    // 检查扩展类型，第三方扩展通常是 'local' 类型
+    // 但我们需要检查实际的扩展类型映射
+    try {
+        const context = getContext();
+        console.log('[小白X] 获取上下文:', !!context);
+
+        if (context && context.extensionTypes) {
+            const extensionTypes = context.extensionTypes;
+            console.log('[小白X] 可用扩展类型:', Object.keys(extensionTypes));
+
+            const id = Object.keys(extensionTypes).find(id =>
+                id === extensionName ||
+                (id.startsWith('third-party') && id.endsWith(extensionName)) ||
+                id === `third-party${extensionName}`
+            );
+
+            console.log('[小白X] 找到的扩展ID:', id);
+            const type = id ? extensionTypes[id] : 'local';
+            console.log('[小白X] 扩展类型:', type);
+            return type;
+        }
+    } catch (error) {
+        console.warn('[小白X] 无法获取扩展类型:', error);
+    }
+    console.log('[小白X] 使用默认类型: local');
     return 'local';
 }
 
@@ -59,21 +95,31 @@ function getExtensionType(extensionName) {
  */
 async function checkLittleWhiteBoxUpdate() {
     try {
+        // 根据SillyTavern的扩展发现机制，第三方扩展在全局目录中
+        // 扩展名称应该是 'LittleWhiteBox'，类型是 'global'
+        const requestBody = {
+            extensionName: 'LittleWhiteBox',
+            global: true, // 第三方扩展通常在全局目录中
+        };
+
+        console.log('[小白X] 发送版本检查请求:', requestBody);
+
         const response = await fetch('/api/extensions/version', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({
-                extensionName: 'LittleWhiteBox',
-                global: getExtensionType('LittleWhiteBox') === 'global',
-            }),
+            body: JSON.stringify(requestBody),
         });
 
+        console.log('[小白X] 响应状态:', response.status, response.statusText);
+
         if (!response.ok) {
-            console.warn('[小白X] 无法检查更新:', response.statusText);
+            const errorText = await response.text();
+            console.warn('[小白X] 版本检查失败:', response.statusText, '详细错误:', errorText);
             return null;
         }
 
         const data = await response.json();
+        console.log('[小白X] 版本检查结果:', data);
         return data;
     } catch (error) {
         console.warn('[小白X] 更新检查失败:', error);
@@ -87,13 +133,17 @@ async function checkLittleWhiteBoxUpdate() {
  */
 async function updateLittleWhiteBoxExtension() {
     try {
+        const requestBody = {
+            extensionName: 'LittleWhiteBox',
+            global: true, // 第三方扩展通常在全局目录中
+        };
+
+        console.log('[小白X] 发送更新请求:', requestBody);
+
         const response = await fetch('/api/extensions/update', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({
-                extensionName: 'LittleWhiteBox',
-                global: getExtensionType('LittleWhiteBox') === 'global',
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
@@ -123,42 +173,79 @@ async function updateLittleWhiteBoxExtension() {
  * 更新扩展标题显示更新提示
  */
 function updateExtensionHeaderWithUpdateNotice() {
-    const headerElement = document.querySelector('.inline-drawer-toggle.inline-drawer-header b');
-    if (headerElement && headerElement.textContent.includes('小白X')) {
-        // 检查是否已经添加了更新提示
-        if (!headerElement.querySelector('#littlewhitebox-update-extension')) {
-            const updateSpan = document.createElement('span');
-            updateSpan.id = 'littlewhitebox-update-extension';
-            updateSpan.style.cssText = 'color: orange; cursor: pointer; margin-left: 5px;';
-            updateSpan.textContent = '(有可用更新)';
-            updateSpan.title = '点击更新小白X扩展';
+    // 尝试多种选择器来找到小白X的标题元素
+    const selectors = [
+        '.inline-drawer-toggle.inline-drawer-header b',
+        '.inline-drawer-header b',
+        '.littlewhitebox .inline-drawer-header b',
+        'div[class*="inline-drawer"] b'
+    ];
 
-            // 添加点击事件
-            updateSpan.addEventListener('click', async (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+    let headerElement = null;
 
-                // 显示更新进度
-                updateSpan.textContent = '(更新中...)';
-                updateSpan.style.color = 'blue';
-                updateSpan.style.cursor = 'wait';
-
-                const success = await updateLittleWhiteBoxExtension();
-
-                if (success) {
-                    // 更新成功，移除更新提示
-                    updateSpan.remove();
-                } else {
-                    // 更新失败，恢复原状
-                    updateSpan.textContent = '(有可用更新)';
-                    updateSpan.style.color = 'orange';
-                    updateSpan.style.cursor = 'pointer';
-                }
-            });
-
-            headerElement.appendChild(updateSpan);
+    for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const element of elements) {
+            if (element.textContent && element.textContent.includes('小白X')) {
+                headerElement = element;
+                console.log('[小白X] 找到标题元素:', selector, element);
+                break;
+            }
         }
+        if (headerElement) break;
     }
+
+    if (!headerElement) {
+        console.warn('[小白X] 未找到扩展标题元素');
+        // 尝试延迟查找，可能DOM还没完全加载
+        setTimeout(() => {
+            console.log('[小白X] 延迟重试查找标题元素');
+            updateExtensionHeaderWithUpdateNotice();
+        }, 1000);
+        return;
+    }
+
+    // 检查是否已经添加了更新提示
+    if (headerElement.querySelector('#littlewhitebox-update-extension')) {
+        console.log('[小白X] 更新提示已存在');
+        return;
+    }
+
+    const updateSpan = document.createElement('span');
+    updateSpan.id = 'littlewhitebox-update-extension';
+    updateSpan.style.cssText = 'color: orange; cursor: pointer; margin-left: 5px;';
+    updateSpan.textContent = '(有可用更新)';
+    updateSpan.title = '点击更新小白X扩展';
+
+    // 添加点击事件
+    updateSpan.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log('[小白X] 用户点击更新按钮');
+
+        // 显示更新进度
+        updateSpan.textContent = '(更新中...)';
+        updateSpan.style.color = 'blue';
+        updateSpan.style.cursor = 'wait';
+
+        const success = await updateLittleWhiteBoxExtension();
+
+        if (success) {
+            // 更新成功，移除更新提示
+            console.log('[小白X] 更新成功，移除更新提示');
+            updateSpan.remove();
+        } else {
+            // 更新失败，恢复原状
+            console.log('[小白X] 更新失败，恢复更新提示');
+            updateSpan.textContent = '(有可用更新)';
+            updateSpan.style.color = 'orange';
+            updateSpan.style.cursor = 'pointer';
+        }
+    });
+
+    headerElement.appendChild(updateSpan);
+    console.log('[小白X] 已添加更新提示到标题');
 }
 
 /**
@@ -166,6 +253,7 @@ function updateExtensionHeaderWithUpdateNotice() {
  */
 async function performExtensionUpdateCheck() {
     if (updateCheckPerformed) {
+        console.log('[小白X] 更新检查已执行过，跳过');
         return; // 避免重复检查
     }
 
@@ -176,10 +264,12 @@ async function performExtensionUpdateCheck() {
         const versionData = await checkLittleWhiteBoxUpdate();
 
         if (versionData && versionData.isUpToDate === false) {
-            console.log('[小白X] 发现可用更新');
+            console.log('[小白X] 发现可用更新，准备更新UI');
             updateExtensionHeaderWithUpdateNotice();
         } else if (versionData && versionData.isUpToDate === true) {
             console.log('[小白X] 扩展已是最新版本');
+        } else {
+            console.log('[小白X] 版本检查返回空结果');
         }
     } catch (error) {
         console.warn('[小白X] 更新检查过程中出现错误:', error);
