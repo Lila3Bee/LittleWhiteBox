@@ -171,25 +171,25 @@
                         <input type="number" id="xiaobaix_memory_depth" min="1" max="20" class="dark-number-input" />
                     </div>
                     <br>
-                    <div class="section-divider">预览功能<hr class="sysHR"></div>
+                    <div class="section-divider">Log及助手<hr class="sysHR"></div>
                     <div class="flex-container">
                         <input type="checkbox" id="xiaobaix_recorded_enabled" />
-                        <label for="xiaobaix_recorded_enabled" class="has-tooltip" data-tooltip="每条消息添加小便条纸，点击可看到发送给时AI的记录">启用消息记录</label>
+                        <label for="xiaobaix_recorded_enabled" class="has-tooltip" data-tooltip="每条消息添加小便条纸，点击可看到发送给时AI的记录">启用Log记录</label>
                     </div>
                     <div class="flex-container">
                         <input type="checkbox" id="xiaobaix_preview_enabled" />
-                        <label for="xiaobaix_preview_enabled" class="has-tooltip" data-tooltip="在聊天框下方显示大便条纸图标，点击可预览将发送给AI的消息">启用消息预览</label>
+                        <label for="xiaobaix_preview_enabled" class="has-tooltip" data-tooltip="在聊天框显示大便条纸，点击可拦截将发送给AI的消息并显示">启用Log拦截</label>
                     </div>
                     <div class="flex-container">
                         <input type="checkbox" id="xiaobaix_script_assistant" />
                         <label for="xiaobaix_script_assistant" class="has-tooltip" data-tooltip="勾选后，AI将获取小白X功能和ST脚本语言知识，帮助您创作角色卡">启用写卡助手</label>
                     </div>
-                    <div class="section-divider">角色卡自动更新<hr class="sysHR" /></div>
+                    <div class="section-divider">角色卡检查更新<hr class="sysHR" /></div>
                     <div class="flex-container">
                         <input type="checkbox" id="character_updater_enabled" />
                         <label for="character_updater_enabled" class="has-tooltip" data-tooltip="启用角色卡云端同步和更新功能">启用角色卡更新</label>
                     </div>
-                    <div class="current-character-info" id="current-character-info-trigger" title="单击更新角色，长按5秒绑定/重绑定">
+                    <div class="current-character-info" id="current-character-info-trigger" title="单击更新角色，长按3秒绑定/重绑定">
                         <span id="current-character-name" class="current-character-name">未选择角色</span>
                         <span id="current-character-status" class="character-status"></span>
                     </div>
@@ -457,7 +457,6 @@ label{
     margin-top: 0.3em;
 }
 
-/* 更新提示相关样式 */
 .littlewhitebox-update-text {
     color: green;
     margin-left: 5px;
@@ -485,16 +484,13 @@ label{
 </style>
 
 <script>
-// 更新功能相关的 JavaScript 代码
 (function() {
     'use strict';
 
-    // 等待 DOM 加载完成
     document.addEventListener('DOMContentLoaded', function() {
         setupUpdateButtonHandlers();
     });
 
-    // 如果 DOM 已经加载完成，立即执行
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setupUpdateButtonHandlers);
     } else {
@@ -502,17 +498,13 @@ label{
     }
 
     function setupUpdateButtonHandlers() {
-        // 为更新按钮添加事件处理器
         const updateButton = document.getElementById('littlewhitebox-update-extension');
         if (updateButton) {
-            // 移除可能已存在的事件监听器
             const newButton = updateButton.cloneNode(true);
             updateButton.parentNode.replaceChild(newButton, updateButton);
 
-            // 重新获取按钮引用
             const button = document.getElementById('littlewhitebox-update-extension');
 
-            // 鼠标悬停效果
             button.addEventListener('mouseenter', function() {
                 if (!this.classList.contains('updating')) {
                     this.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
@@ -527,14 +519,12 @@ label{
                 }
             });
 
-            // 点击事件
             button.addEventListener('click', async function(e) {
                 e.preventDefault();
                 e.stopPropagation();
 
                 console.log('[小白X] 用户点击下载更新按钮');
 
-                // 显示更新进度
                 this.className = 'menu_button fa-solid fa-spinner fa-spin interactable updating';
                 this.style.color = '#007bff';
                 this.style.backgroundColor = 'transparent';
@@ -542,7 +532,6 @@ label{
                 this.title = '正在更新...';
 
                 try {
-                    // 调用全局的更新函数
                     let success = false;
                     if (window.updateLittleWhiteBoxExtension) {
                         success = await window.updateLittleWhiteBoxExtension();
@@ -551,13 +540,11 @@ label{
                     }
 
                     if (success) {
-                        // 更新成功，移除所有更新提示
                         console.log('[小白X] 更新成功，移除更新提示');
                         if (window.removeAllUpdateNotices) {
                             window.removeAllUpdateNotices();
                         }
                     } else {
-                        // 更新失败，恢复原状
                         console.log('[小白X] 更新失败，恢复下载按钮');
                         this.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
                         this.classList.remove('updating');
@@ -566,7 +553,6 @@ label{
                     }
                 } catch (error) {
                     console.error('[小白X] 更新过程中发生错误:', error);
-                    // 恢复原状
                     this.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
                     this.classList.remove('updating');
                     this.style.color = '#28a745';
@@ -576,7 +562,6 @@ label{
         }
     }
 
-    // 导出函数到全局作用域，供 index.js 调用
     window.setupUpdateButtonInSettings = setupUpdateButtonHandlers;
 })();
 </script>
