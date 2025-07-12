@@ -68,7 +68,7 @@ function setupInterceptor() {
         if (isTargetApiRequest(url, options)) {
             if (state.isPreviewMode || state.isLongInterceptMode) {
                 return handlePreviewInterception(url, options).catch(() =>
-                    new Response(JSON.stringify({ error: { message: "预览失败，请手动中止消息生成。" } }),
+                    new Response(JSON.stringify({ error: { message: "拦截失败，请手动中止消息生成。" } }),
                     { status: 500, headers: { 'Content-Type': 'application/json' } })
                 );
             } else {
@@ -269,7 +269,7 @@ async function showMessagePreview() {
         let globalEnabled = true;
         try { if ('isXiaobaixEnabled' in window) globalEnabled = Boolean(window['isXiaobaixEnabled']); } catch {}
         if (!settings.preview.enabled || !globalEnabled) {
-            toastr.warning('消息预览功能未启用');
+            toastr.warning('消息拦截功能未启用');
             return;
         }
 
@@ -287,7 +287,7 @@ async function showMessagePreview() {
         state.previewAbortController = new AbortController();
         restoreMessageCreation = interceptMessageCreation();
 
-        loadingToast = toastr.info(`正在预览请求...（${settings.preview.timeoutSeconds}秒超时）`, '消息预览', {
+        loadingToast = toastr.info(`正在拦截请求...（${settings.preview.timeoutSeconds}秒超时）`, '消息拦截', {
             timeOut: 0, tapToDismiss: false
         });
 
@@ -299,21 +299,21 @@ async function showMessagePreview() {
 
         if (result.success) {
             await displayPreviewResult(result.data, textareaText);
-            toastr.success('预览成功！', '', { timeOut: 3000 });
+            toastr.success('拦截成功！', '', { timeOut: 3000 });
         } else {
-            toastr.error(`预览失败: ${result.error}`, '', { timeOut: 5000 });
+            toastr.error(`拦截失败: ${result.error}`, '', { timeOut: 5000 });
         }
 
     } catch (error) {
         if (loadingToast) { toastr.clear(loadingToast); loadingToast = null; }
-        toastr.error(`预览异常: ${error.message}`, '', { timeOut: 5000 });
+        toastr.error(`拦截异常: ${error.message}`, '', { timeOut: 5000 });
     } finally {
         if (state.previewAbortController) {
-            try { state.previewAbortController.abort('预览结束'); } catch (abortError) {}
+            try { state.previewAbortController.abort('拦截结束'); } catch (abortError) {}
             state.previewAbortController = null;
         }
         if (state.previewPromiseResolve) {
-            state.previewPromiseResolve({ success: false, error: '预览已取消' });
+            state.previewPromiseResolve({ success: false, error: '拦截已取消' });
         }
         state.previewPromiseResolve = state.previewPromiseReject = null;
         if (restoreMessageCreation) {
@@ -330,9 +330,9 @@ async function displayPreviewResult(data, userInput) {
     try {
         const formattedContent = formatPreviewContent(data, userInput, false);
         const popupContent = `<div class="message-preview-container"><div class="message-preview-content-box">${formattedContent}</div></div>`;
-        await callGenericPopup(popupContent, POPUP_TYPE.TEXT, '消息预览', { wide: true, large: true });
+        await callGenericPopup(popupContent, POPUP_TYPE.TEXT, '消息拦截', { wide: true, large: true });
     } catch (error) {
-        toastr.error('显示预览失败');
+        toastr.error('显示拦截失败');
     }
 }
 
@@ -367,12 +367,12 @@ async function showMessageHistoryPreview(messageId) {
             const messageData = { ...apiRecord, isHistoryPreview: true, targetMessageId: messageId };
             const formattedContent = formatPreviewContent(messageData, messageData.userInput, true);
             const popupContent = `<div class="message-preview-container"><div class="message-preview-content-box">${formattedContent}</div></div>`;
-            await callGenericPopup(popupContent, POPUP_TYPE.TEXT, `消息历史预览 - 第 ${messageId + 1} 条消息`, { wide: true, large: true });
+            await callGenericPopup(popupContent, POPUP_TYPE.TEXT, `消息历史查看 - 第 ${messageId + 1} 条消息`, { wide: true, large: true });
         } else {
             toastr.warning(`未找到第 ${messageId + 1} 条消息的API请求记录`);
         }
     } catch (error) {
-        toastr.error('历史预览失败');
+        toastr.error('查看历史消息失败');
     }
 }
 
@@ -521,7 +521,7 @@ function toggleLongInterceptMode() {
         state.chatLengthBeforeIntercept = context.chat?.length || 0;
         state.longInterceptRestoreFunction = interceptMessageCreation();
         $btn.css('color', 'red');
-        toastr.info('持续预览模式已开启', '', { timeOut: 2000 });
+        toastr.info('持续拦截已开启', '', { timeOut: 2000 });
     } else {
         $btn.css('color', '');
         if (state.longInterceptRestoreFunction) {
@@ -530,7 +530,7 @@ function toggleLongInterceptMode() {
         }
         state.interceptedMessageIds = [];
         state.chatLengthBeforeIntercept = 0;
-        toastr.info('预览预览模式已关闭', '', { timeOut: 2000 });
+        toastr.info('持续拦截已关闭', '', { timeOut: 2000 });
     }
 }
 
