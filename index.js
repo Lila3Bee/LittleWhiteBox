@@ -45,16 +45,13 @@ let updateCheckPerformed = false;
 // ============ 全局接口导出 ============
 window.isXiaobaixEnabled = isXiaobaixEnabled;
 window.testLittleWhiteBoxUpdate = async () => {
-    console.log('[小白X] 手动触发更新检查测试');
     updateCheckPerformed = false;
     await performExtensionUpdateCheck();
 };
 window.testUpdateUI = () => {
-    console.log('[小白X] 手动触发UI更新测试');
     updateExtensionHeaderWithUpdateNotice();
 };
 window.testRemoveUpdateUI = () => {
-    console.log('[小白X] 手动移除更新UI测试');
     removeAllUpdateNotices();
 };
 
