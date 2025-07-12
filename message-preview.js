@@ -452,7 +452,6 @@ function cleanupMemory() {
 }
 
 function addEventListeners() {
-    // 先移除现有的事件监听器，避免重复注册
     removeEventListeners();
 
     const listeners = [
@@ -623,7 +622,6 @@ function initMessagePreview() {
         $("#send_but").before(previewButton);
         handlePreviewButtonEvents();
 
-        // 设置事件绑定
         $("#xiaobaix_preview_enabled").prop("checked", settings.preview.enabled).on("change", function() {
             let globalEnabled = true;
             try { if ('isXiaobaixEnabled' in window) globalEnabled = Boolean(window['isXiaobaixEnabled']); } catch {}
@@ -651,13 +649,11 @@ function initMessagePreview() {
             settings.recorded.enabled = $(this).prop("checked");
             saveSettingsDebounced();
             if (settings.recorded.enabled) {
-                // 重新添加事件监听器以确保历史按钮功能正常工作
                 addEventListeners();
                 addHistoryButtonsDebounced();
             } else {
                 $('.mes_history_preview').remove();
                 state.apiRequestHistory.length = 0;
-                // 只有当两个功能都关闭时才移除事件监听器
                 if (!settings.preview.enabled) {
                     removeEventListeners();
                 }
@@ -668,7 +664,6 @@ function initMessagePreview() {
         if (!settings.preview.enabled) $('#message_preview_btn').hide();
         updateInterceptorState();
         if (settings.recorded.enabled) addHistoryButtonsDebounced();
-        // 只有在任一功能启用时才添加事件监听器
         if (settings.preview.enabled || settings.recorded.enabled) {
             addEventListeners();
         }
