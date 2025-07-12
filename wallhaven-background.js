@@ -1467,7 +1467,7 @@ function extractTagsFromText(text, isBgMode = false) {
         tag: tag,
         category: 'custom',
         weight: tagWeights.custom,
-        position: text.lastIndexOf(tag) // 记录最后出现位置
+        position: text.lastIndexOf(tag)
     }));
 
     if (isBgMode) {
@@ -1541,9 +1541,9 @@ function extractTagsFromText(text, isBgMode = false) {
 
             tags.sort((a, b) => b.position - a.position);
 
-            let maxCount = 1; // 默认1个
+            let maxCount = 1;
             if (['characters', 'clothing', 'body_features'].includes(category)) {
-                maxCount = 2; // 这三类可以选2个
+                maxCount = 2;
             }
 
             const selectedFromCategory = tags.slice(0, maxCount);
@@ -1699,17 +1699,14 @@ function applyBackgroundToApp(imageUrl, settings) {
     const isSmallScreen = window.innerWidth <= 1000;
     
     if (isSmallScreen) {
-        // 手机端：使用新的fixed定位方案，从rightNavHolder下方开始
         const chatElement = document.getElementById('chat');
         if (!chatElement) return;
         
         const bgId = 'wallhaven-mobile-background';
         const overlayId = 'wallhaven-mobile-overlay';
         
-        // 清除可能存在的其他背景
         document.querySelectorAll('[id^="wallhaven-"]').forEach(el => el.remove());
         
-        // 计算顶部导航栏高度
         let topOffset = 0;
         const rightNavHolder = document.getElementById('rightNavHolder');
         if (rightNavHolder) {
@@ -1765,13 +1762,11 @@ function applyBackgroundToApp(imageUrl, settings) {
         backgroundContainer.style.backgroundImage = `url("${imageUrl}")`;
         overlay.style.backgroundColor = `rgba(0, 0, 0, ${settings.opacity})`;
         
-        // 更新位置
         backgroundContainer.style.top = `${topOffset}px`;
         backgroundContainer.style.height = `calc(100vh - ${topOffset}px)`;
         overlay.style.top = `${topOffset}px`;
         overlay.style.height = `calc(100vh - ${topOffset}px)`;
         
-        // 只清理chat元素的背景，像桌面端一样
         if (chatElement) {
             chatElement.style.cssText += `
                 background-color: transparent !important;
@@ -1787,7 +1782,6 @@ function applyBackgroundToApp(imageUrl, settings) {
         applyMessageStyling();
         
     } else {
-        // 桌面端：保持原有的工作良好的逻辑
         const targetContainer = document.getElementById('expression-wrapper');
         if (!targetContainer) return;
 
