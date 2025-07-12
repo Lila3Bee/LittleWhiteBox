@@ -1,0 +1,97 @@
+<div id="bind-character-menu" class="character-menu-overlay" style="display: none;">
+    <div class="character-menu-content">
+        <div class="menu-header">
+            <h3>绑定角色</h3>
+            <button class="menu-close" id="bind-menu-close">&times;</button>
+        </div>
+        <div class="menu-body">
+            <div class="uuid-display">
+                <label>角色UUID:</label>
+                <span id="bind-uuid-display" class="uuid-value">将自动生成</span>
+            </div>
+            <div class="form-group">
+                <label for="bind-password">注册密码:</label>
+                <input type="password" id="bind-password" placeholder="设置此角色的管理密码">
+            </div>
+            <div class="form-group">
+                <label for="bind-update-note">更新说明:</label>
+                <input type="text" id="bind-update-note" placeholder="描述本次更新的内容（可选）">
+            </div>
+            <div class="form-group">
+                <label for="bind-png-url">链接地址:</label>
+                <input type="url" id="bind-png-url" placeholder="角色相关链接地址（可选）">
+            </div>
+        </div>
+        <div class="menu-footer">
+            <button class="menu_button confirm-button" id="bind-confirm">确认</button>
+            <button class="menu_button cancel-button" id="bind-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="rebind-character-menu" class="character-menu-overlay" style="display: none;">
+    <div class="character-menu-content">
+        <div class="menu-header">
+            <h3>重绑定角色</h3>
+            <button class="menu-close" id="rebind-menu-close">&times;</button>
+        </div>
+        <div class="menu-body">
+            <div class="uuid-display">
+                <label>当前UUID:</label>
+                <span id="rebind-current-uuid" class="uuid-value">-</span>
+            </div>
+            <div class="uuid-display">
+                <label>新UUID:</label>
+                <span id="rebind-new-uuid" class="uuid-value">将自动生成</span>
+            </div>
+            <div class="form-group">
+                <label for="rebind-password">注册密码:</label>
+                <input type="password" id="rebind-password" placeholder="设置新的管理密码">
+            </div>
+            <div class="form-group">
+                <label for="rebind-update-note">更新说明:</label>
+                <input type="text" id="rebind-update-note" placeholder="描述本次更新的内容（可选）">
+            </div>
+            <div class="form-group">
+                <label for="rebind-png-url">链接地址:</label>
+                <input type="url" id="rebind-png-url" placeholder="角色相关链接地址（可选）">
+            </div>
+        </div>
+        <div class="menu-footer">
+            <button class="menu_button confirm-button" id="rebind-confirm">确认</button>
+            <button class="menu_button cancel-button" id="rebind-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="update-character-menu" class="character-menu-overlay" style="display: none;">
+    <div class="character-menu-content">
+        <div class="menu-header">
+            <h3>更新角色</h3>
+            <button class="menu-close" id="update-menu-close">&times;</button>
+        </div>
+        <div class="menu-body">
+            <div class="uuid-display">
+                <label>角色UUID:</label>
+                <span id="update-uuid-display" class="uuid-value">-</span>
+            </div>
+            <div class="form-group">
+                <label for="update-password">确认密码:</label>
+                <input type="password" id="update-password" placeholder="输入此角色的管理密码">
+            </div>
+            <div class="form-group">
+                <label for="update-update-note">更新说明:</label>
+                <input type="text" id="update-update-note" placeholder="描述本次更新的内容（可选）">
+            </div>
+            <div class="form-group">
+                <label for="update-png-url">链接地址:</label>
+                <input type="url" id="update-png-url" placeholder="角色相关链接地址（可选）">
+            </div>
+        </div>
+        <div class="menu-footer">
+            <button class="menu_button confirm-button" id="update-confirm">公开更新</button>
+            <button class="menu_button silent-update-button" id="update-silent" title="只更新公告和链接到云端，不修改时间戳，其他用户不会收到更新提醒">静默更新</button>
+            <button class="menu_button cancel-button" id="update-cancel">取消</button>
+        </div>
+    </div>
+</div>

@@ -16,7 +16,7 @@
             </div>
             <div class="settings-content">
                 <div class="js-memory settings-section" style="display: block;">
-                    <div class="section-divider">总开关<hr class="sysHR" /></div>
+                    <div class="section-divider" style="margin-bottom: 0px;margin-top: 0px;">总开关</div><hr class="sysHR" />
                     <div class="flex-container">
                         <input type="checkbox" id="xiaobaix_enabled" />
                         <label for="xiaobaix_enabled" class="has-tooltip" data-tooltip="渲染被```包裹的html、!DOCTYPE、script的代码块内容为交互式界面
@@ -456,4 +456,126 @@
 label{
     margin-top: 0.3em;
 }
+
+/* 更新提示相关样式 */
+.littlewhitebox-update-text {
+    color: orange;
+    margin-left: 5px;
+}
+
+#littlewhitebox-update-extension {
+    color: #28a745;
+    cursor: pointer;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    transition: all 0.2s ease;
+}
+
+#littlewhitebox-update-extension:hover {
+    background-color: rgba(40, 167, 69, 0.1);
+    transform: scale(1.1);
+}
+
+#littlewhitebox-update-extension.updating {
+    color: #007bff;
+    background-color: transparent;
+    transform: scale(1);
+}
 </style>
+
+<script>
+// 更新功能相关的 JavaScript 代码
+(function() {
+    'use strict';
+
+    // 等待 DOM 加载完成
+    document.addEventListener('DOMContentLoaded', function() {
+        setupUpdateButtonHandlers();
+    });
+
+    // 如果 DOM 已经加载完成，立即执行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupUpdateButtonHandlers);
+    } else {
+        setupUpdateButtonHandlers();
+    }
+
+    function setupUpdateButtonHandlers() {
+        // 为更新按钮添加事件处理器
+        const updateButton = document.getElementById('littlewhitebox-update-extension');
+        if (updateButton) {
+            // 移除可能已存在的事件监听器
+            const newButton = updateButton.cloneNode(true);
+            updateButton.parentNode.replaceChild(newButton, updateButton);
+
+            // 重新获取按钮引用
+            const button = document.getElementById('littlewhitebox-update-extension');
+
+            // 鼠标悬停效果
+            button.addEventListener('mouseenter', function() {
+                if (!this.classList.contains('updating')) {
+                    this.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
+                    this.style.transform = 'scale(1.1)';
+                }
+            });
+
+            button.addEventListener('mouseleave', function() {
+                if (!this.classList.contains('updating')) {
+                    this.style.backgroundColor = 'transparent';
+                    this.style.transform = 'scale(1)';
+                }
+            });
+
+            // 点击事件
+            button.addEventListener('click', async function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                console.log('[小白X] 用户点击下载更新按钮');
+
+                // 显示更新进度
+                this.className = 'menu_button fa-solid fa-spinner fa-spin interactable updating';
+                this.style.color = '#007bff';
+                this.style.backgroundColor = 'transparent';
+                this.style.transform = 'scale(1)';
+                this.title = '正在更新...';
+
+                try {
+                    // 调用全局的更新函数
+                    let success = false;
+                    if (window.updateLittleWhiteBoxExtension) {
+                        success = await window.updateLittleWhiteBoxExtension();
+                    } else {
+                        console.error('[小白X] 更新函数不可用');
+                    }
+
+                    if (success) {
+                        // 更新成功，移除所有更新提示
+                        console.log('[小白X] 更新成功，移除更新提示');
+                        if (window.removeAllUpdateNotices) {
+                            window.removeAllUpdateNotices();
+                        }
+                    } else {
+                        // 更新失败，恢复原状
+                        console.log('[小白X] 更新失败，恢复下载按钮');
+                        this.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
+                        this.classList.remove('updating');
+                        this.style.color = '#28a745';
+                        this.title = '下載並安裝小白x的更新';
+                    }
+                } catch (error) {
+                    console.error('[小白X] 更新过程中发生错误:', error);
+                    // 恢复原状
+                    this.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
+                    this.classList.remove('updating');
+                    this.style.color = '#28a745';
+                    this.title = '下載並安裝小白x的更新';
+                }
+            });
+        }
+    }
+
+    // 导出函数到全局作用域，供 index.js 调用
+    window.setupUpdateButtonInSettings = setupUpdateButtonHandlers;
+})();
+</script>

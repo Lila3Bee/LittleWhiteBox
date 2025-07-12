@@ -9,11 +9,13 @@ import { initTemplateEditor, templateSettings } from "./template-editor.js";
 import { initWallhavenBackground } from "./wallhaven-background.js";
 import { initCharacterUpdater } from "./character-updater.js";
 
+// ============ 常量定义 ============
 const EXT_ID = "LittleWhiteBox";
 const EXT_NAME = "小白X";
 const MODULE_NAME = "xiaobaix-memory";
 const extensionFolderPath = `scripts/extensions/third-party/${EXT_ID}`;
 
+// ============ 扩展设置初始化 ============
 extension_settings[EXT_ID] = extension_settings[EXT_ID] || {
     enabled: true,
     sandboxMode: false,
@@ -30,6 +32,7 @@ extension_settings[EXT_ID] = extension_settings[EXT_ID] || {
     characterUpdater: { enabled: true, showNotifications: true, serverUrl: "https://db.littlewhitebox.qzz.io" }
 };
 
+// ============ 全局变量 ============
 const settings = extension_settings[EXT_ID];
 let isXiaobaixEnabled = settings.enabled;
 let moduleInstances = { statsTracker: null };
@@ -37,71 +40,28 @@ let savedSettings = {};
 let globalEventListeners = [];
 let globalTimers = [];
 let moduleCleanupFunctions = new Map();
-
-window.isXiaobaixEnabled = isXiaobaixEnabled;
-
-// 扩展更新检查相关变量
 let updateCheckPerformed = false;
 
-// 导出测试函数到全局作用域，方便调试
-window.testLittleWhiteBoxUpdate = async function() {
+// ============ 全局接口导出 ============
+window.isXiaobaixEnabled = isXiaobaixEnabled;
+window.testLittleWhiteBoxUpdate = async () => {
     console.log('[小白X] 手动触发更新检查测试');
-    updateCheckPerformed = false; // 重置标志
+    updateCheckPerformed = false;
     await performExtensionUpdateCheck();
 };
-
-window.testUpdateUI = function() {
+window.testUpdateUI = () => {
     console.log('[小白X] 手动触发UI更新测试');
     updateExtensionHeaderWithUpdateNotice();
 };
+window.testRemoveUpdateUI = () => {
+    console.log('[小白X] 手动移除更新UI测试');
+    removeAllUpdateNotices();
+};
 
-/**
- * 获取扩展类型
- * @param {string} extensionName 扩展名称
- * @returns {string} 扩展类型
- */
-function getExtensionType(extensionName) {
-    // 检查扩展类型，第三方扩展通常是 'local' 类型
-    // 但我们需要检查实际的扩展类型映射
-    try {
-        const context = getContext();
-        console.log('[小白X] 获取上下文:', !!context);
-
-        if (context && context.extensionTypes) {
-            const extensionTypes = context.extensionTypes;
-            console.log('[小白X] 可用扩展类型:', Object.keys(extensionTypes));
-
-            const id = Object.keys(extensionTypes).find(id =>
-                id === extensionName ||
-                (id.startsWith('third-party') && id.endsWith(extensionName)) ||
-                id === `third-party${extensionName}`
-            );
-
-            console.log('[小白X] 找到的扩展ID:', id);
-            const type = id ? extensionTypes[id] : 'local';
-            console.log('[小白X] 扩展类型:', type);
-            return type;
-        }
-    } catch (error) {
-        console.warn('[小白X] 无法获取扩展类型:', error);
-    }
-    console.log('[小白X] 使用默认类型: local');
-    return 'local';
-}
-
-/**
- * 检查LittleWhiteBox扩展是否有可用更新
- * @returns {Promise<Object|null>} 版本信息或null
- */
+// ============ 更新功能模块 ============
 async function checkLittleWhiteBoxUpdate() {
     try {
-        // 根据SillyTavern的扩展发现机制，第三方扩展在全局目录中
-        // 扩展名称应该是 'LittleWhiteBox'，类型是 'global'
-        const requestBody = {
-            extensionName: 'LittleWhiteBox',
-            global: true, // 第三方扩展通常在全局目录中
-        };
-
+        const requestBody = { extensionName: 'LittleWhiteBox', global: true };
         console.log('[小白X] 发送版本检查请求:', requestBody);
 
         const response = await fetch('/api/extensions/version', {
@@ -127,17 +87,9 @@ async function checkLittleWhiteBoxUpdate() {
     }
 }
 
-/**
- * 更新LittleWhiteBox扩展
- * @returns {Promise<boolean>} 更新是否成功
- */
 async function updateLittleWhiteBoxExtension() {
     try {
-        const requestBody = {
-            extensionName: 'LittleWhiteBox',
-            global: true, // 第三方扩展通常在全局目录中
-        };
-
+        const requestBody = { extensionName: 'LittleWhiteBox', global: true };
         console.log('[小白X] 发送更新请求:', requestBody);
 
         const response = await fetch('/api/extensions/update', {
@@ -154,13 +106,10 @@ async function updateLittleWhiteBoxExtension() {
         }
 
         const data = await response.json();
-
-        if (data.isUpToDate) {
-            toastr.success('小白X已是最新版本');
-        } else {
-            toastr.success(`小白X已更新到 ${data.shortCommitHash}`, '请刷新页面以应用更新');
-        }
-
+        const message = data.isUpToDate ? '小白X已是最新版本' : `小白X已更新到 ${data.shortCommitHash}`;
+        const title = data.isUpToDate ? '' : '请刷新页面以应用更新';
+        
+        toastr.success(message, title);
         return true;
     } catch (error) {
         console.error('[小白X] 更新错误:', error);
@@ -169,11 +118,12 @@ async function updateLittleWhiteBoxExtension() {
     }
 }
 
-/**
- * 更新扩展标题显示更新提示
- */
 function updateExtensionHeaderWithUpdateNotice() {
-    // 尝试多种选择器来找到小白X的标题元素
+    addUpdateTextNotice();
+    addUpdateDownloadButton();
+}
+
+function addUpdateTextNotice() {
     const selectors = [
         '.inline-drawer-toggle.inline-drawer-header b',
         '.inline-drawer-header b',
@@ -182,7 +132,6 @@ function updateExtensionHeaderWithUpdateNotice() {
     ];
 
     let headerElement = null;
-
     for (const selector of selectors) {
         const elements = document.querySelectorAll(selector);
         for (const element of elements) {
@@ -197,64 +146,85 @@ function updateExtensionHeaderWithUpdateNotice() {
 
     if (!headerElement) {
         console.warn('[小白X] 未找到扩展标题元素');
-        // 尝试延迟查找，可能DOM还没完全加载
-        setTimeout(() => {
-            console.log('[小白X] 延迟重试查找标题元素');
-            updateExtensionHeaderWithUpdateNotice();
-        }, 1000);
+        setTimeout(() => addUpdateTextNotice(), 1000);
         return;
     }
 
-    // 检查是否已经添加了更新提示
-    if (headerElement.querySelector('#littlewhitebox-update-extension')) {
-        console.log('[小白X] 更新提示已存在');
+    if (headerElement.querySelector('.littlewhitebox-update-text')) {
+        console.log('[小白X] 文字更新提示已存在');
         return;
     }
 
-    const updateSpan = document.createElement('span');
-    updateSpan.id = 'littlewhitebox-update-extension';
-    updateSpan.style.cssText = 'color: orange; cursor: pointer; margin-left: 5px;';
-    updateSpan.textContent = '(有可用更新)';
-    updateSpan.title = '点击更新小白X扩展';
-
-    // 添加点击事件
-    updateSpan.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        console.log('[小白X] 用户点击更新按钮');
-
-        // 显示更新进度
-        updateSpan.textContent = '(更新中...)';
-        updateSpan.style.color = 'blue';
-        updateSpan.style.cursor = 'wait';
-
-        const success = await updateLittleWhiteBoxExtension();
-
-        if (success) {
-            // 更新成功，移除更新提示
-            console.log('[小白X] 更新成功，移除更新提示');
-            updateSpan.remove();
-        } else {
-            // 更新失败，恢复原状
-            console.log('[小白X] 更新失败，恢复更新提示');
-            updateSpan.textContent = '(有可用更新)';
-            updateSpan.style.color = 'orange';
-            updateSpan.style.cursor = 'pointer';
-        }
-    });
-
-    headerElement.appendChild(updateSpan);
-    console.log('[小白X] 已添加更新提示到标题');
+    const updateTextSpan = document.createElement('span');
+    updateTextSpan.className = 'littlewhitebox-update-text';
+    updateTextSpan.textContent = '(有可用更新)';
+    headerElement.appendChild(updateTextSpan);
+    console.log('[小白X] 已添加文字更新提示到标题');
 }
 
-/**
- * 执行扩展更新检查
- */
+function addUpdateDownloadButton() {
+    const sectionDividers = document.querySelectorAll('.section-divider');
+    let totalSwitchDivider = null;
+
+    for (const divider of sectionDividers) {
+        if (divider.textContent && divider.textContent.includes('总开关')) {
+            totalSwitchDivider = divider;
+            console.log('[小白X] 找到总开关标题元素');
+            break;
+        }
+    }
+
+    if (!totalSwitchDivider) {
+        console.warn('[小白X] 未找到总开关标题元素');
+        setTimeout(() => addUpdateDownloadButton(), 1000);
+        return;
+    }
+
+    if (document.querySelector('#littlewhitebox-update-extension')) {
+        console.log('[小白X] 下载按钮已存在');
+        return;
+    }
+
+    const updateButton = document.createElement('div');
+    updateButton.id = 'littlewhitebox-update-extension';
+    updateButton.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
+    updateButton.title = '下載並安裝小白x的更新';
+    updateButton.tabIndex = 0;
+
+    try {
+        totalSwitchDivider.style.display = 'flex';
+        totalSwitchDivider.style.alignItems = 'center';
+        totalSwitchDivider.style.justifyContent = 'flex-start';
+    } catch (e) {
+        console.warn('[小白X] 无法设置总开关样式:', e);
+    }
+
+    totalSwitchDivider.appendChild(updateButton);
+    console.log('[小白X] 已添加下载按钮到总开关标题旁边');
+
+    try {
+        if (window.setupUpdateButtonInSettings) {
+            window.setupUpdateButtonInSettings();
+        }
+    } catch (e) {
+        console.warn('[小白X] 无法调用设置中的更新按钮处理器:', e);
+    }
+}
+
+function removeAllUpdateNotices() {
+    const textNotice = document.querySelector('.littlewhitebox-update-text');
+    const downloadButton = document.querySelector('#littlewhitebox-update-extension');
+    
+    if (textNotice) textNotice.remove();
+    if (downloadButton) downloadButton.remove();
+    
+    console.log('[小白X] 已移除所有更新提示');
+}
+
 async function performExtensionUpdateCheck() {
     if (updateCheckPerformed) {
         console.log('[小白X] 更新检查已执行过，跳过');
-        return; // 避免重复检查
+        return;
     }
 
     updateCheckPerformed = true;
@@ -276,6 +246,7 @@ async function performExtensionUpdateCheck() {
     }
 }
 
+// ============ 资源管理模块 ============
 function registerModuleCleanup(moduleName, cleanupFunction) {
     moduleCleanupFunctions.set(moduleName, cleanupFunction);
 }
@@ -290,12 +261,11 @@ function addGlobalTimer(timerId) {
 }
 
 function cleanupAllResources() {
+    // 清理事件监听器
     globalEventListeners.forEach(({ target, event, handler, options, isEventSource }) => {
         try {
-            if (isEventSource) {
-                if (target.removeListener) {
-                    target.removeListener(event, handler);
-                }
+            if (isEventSource && target.removeListener) {
+                target.removeListener(event, handler);
             } else {
                 target.removeEventListener(event, handler, options);
             }
@@ -305,6 +275,7 @@ function cleanupAllResources() {
     });
     globalEventListeners.length = 0;
 
+    // 清理计时器
     globalTimers.forEach(timerId => {
         try {
             clearTimeout(timerId);
@@ -315,6 +286,7 @@ function cleanupAllResources() {
     });
     globalTimers.length = 0;
 
+    // 清理模块
     moduleCleanupFunctions.forEach((cleanupFn, moduleName) => {
         try {
             cleanupFn();
@@ -324,9 +296,8 @@ function cleanupAllResources() {
     });
     moduleCleanupFunctions.clear();
 
-    document.querySelectorAll('iframe.xiaobaix-iframe').forEach(iframe => iframe.remove());
-    document.querySelectorAll('.xiaobaix-iframe-wrapper').forEach(wrapper => wrapper.remove());
-
+    // 清理DOM元素
+    document.querySelectorAll('iframe.xiaobaix-iframe, .xiaobaix-iframe-wrapper').forEach(el => el.remove());
     document.querySelectorAll('.memory-button, .mes_history_preview').forEach(btn => btn.remove());
     document.querySelectorAll('#message_preview_btn').forEach(btn => {
         if (btn instanceof HTMLElement) {
@@ -335,6 +306,7 @@ function cleanupAllResources() {
     });
 }
 
+// ============ 工具函数模块 ============
 async function waitForElement(selector, root = document, timeout = 10000) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
@@ -355,6 +327,7 @@ function shouldRenderContent(content) {
     return htmlTags.some(tag => content.includes(tag));
 }
 
+// ============ iframe渲染模块 ============
 function createIframeApi() {
     return `
     const originalGetElementById = document.getElementById;
@@ -580,6 +553,7 @@ function renderHtmlInIframe(htmlContent, container, preElement) {
     }
 }
 
+// ============ 设置管理模块 ============
 function toggleSettingsControls(enabled) {
     const controls = [
         'xiaobaix_sandbox', 'xiaobaix_memory_enabled', 'xiaobaix_memory_inject',
@@ -642,7 +616,6 @@ function restoreSettings() {
             $(`#${control}`).prop("checked", savedSettings[key]);
         }
     });
-
 }
 
 function toggleAllFeatures(enabled) {
@@ -653,17 +626,22 @@ function toggleAllFeatures(enabled) {
         setTimeout(() => processExistingMessages(), 100);
         setupEventListeners();
 
-        if (settings.memoryEnabled && moduleInstances.statsTracker?.updateMemoryPrompt) setTimeout(() => moduleInstances.statsTracker.updateMemoryPrompt(), 200);
-        if (extension_settings[EXT_ID].scriptAssistant?.enabled && window.injectScriptDocs) setTimeout(() => window.injectScriptDocs(), 300);
-        if (extension_settings[EXT_ID].preview?.enabled) setTimeout(() => { document.querySelectorAll('#message_preview_btn').forEach(btn => btn.style.display = ''); }, 400);
-        if (extension_settings[EXT_ID].recorded?.enabled) setTimeout(() => addHistoryButtonsDebounced(), 500);
+        // 延迟启动各模块
+        if (settings.memoryEnabled && moduleInstances.statsTracker?.updateMemoryPrompt) 
+            setTimeout(() => moduleInstances.statsTracker.updateMemoryPrompt(), 200);
+        if (extension_settings[EXT_ID].scriptAssistant?.enabled && window.injectScriptDocs) 
+            setTimeout(() => window.injectScriptDocs(), 300);
+        if (extension_settings[EXT_ID].preview?.enabled) 
+            setTimeout(() => { document.querySelectorAll('#message_preview_btn').forEach(btn => btn.style.display = ''); }, 400);
+        if (extension_settings[EXT_ID].recorded?.enabled) 
+            setTimeout(() => addHistoryButtonsDebounced(), 500);
 
         document.dispatchEvent(new CustomEvent('xiaobaixEnabledChanged', { detail: { enabled: true } }));
     } else {
         saveCurrentSettings();
         cleanupAllResources();
 
-        if (window.messagePreviewCleanup) try { window.messagePreviewCleanup(); } catch (e) {}
+        if (window.messagePreviewCleanup) try { window.messagePreviewCleanup(); } catch (e) { }
 
         Object.assign(settings, { sandboxMode: false, memoryEnabled: false, memoryInjectEnabled: false });
 
@@ -673,9 +651,9 @@ function toggleAllFeatures(enabled) {
         });
 
         ["xiaobaix_sandbox", "xiaobaix_memory_enabled", "xiaobaix_memory_inject",
-         "xiaobaix_recorded_enabled", "xiaobaix_preview_enabled", "xiaobaix_script_assistant",
-         "scheduled_tasks_enabled", "xiaobaix_template_enabled", "wallhaven_enabled",
-         "xiaobaix_immersive_enabled", "character_updater_enabled"].forEach(id => $(`#${id}`).prop("checked", false));
+            "xiaobaix_recorded_enabled", "xiaobaix_preview_enabled", "xiaobaix_script_assistant",
+            "scheduled_tasks_enabled", "xiaobaix_template_enabled", "wallhaven_enabled",
+            "xiaobaix_immersive_enabled", "character_updater_enabled"].forEach(id => $(`#${id}`).prop("checked", false));
 
         toggleSettingsControls(false);
 
@@ -691,6 +669,7 @@ function toggleAllFeatures(enabled) {
     }
 }
 
+// ============ 消息处理模块 ============
 function processCodeBlocks(messageElement) {
     if (!settings.enabled || !isXiaobaixEnabled) return;
     try {
@@ -700,8 +679,8 @@ function processCodeBlocks(messageElement) {
             if (preElement.dataset.xiaobaixBound === 'true') return;
 
             const oldIframe = preElement.parentNode.querySelector('iframe.xiaobaix-iframe');
-            if (oldIframe) oldIframe.remove();
             const oldWrapper = preElement.parentNode.querySelector('.xiaobaix-iframe-wrapper');
+            if (oldIframe) oldIframe.remove();
             if (oldWrapper) oldWrapper.remove();
 
             preElement.dataset.xiaobaixBound = 'true';
@@ -710,21 +689,21 @@ function processCodeBlocks(messageElement) {
                 renderHtmlInIframe(codeContent, preElement.parentNode, preElement);
             }
         });
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function processExistingMessages() {
     if (!settings.enabled || !isXiaobaixEnabled) return;
     document.querySelectorAll('.mes_text').forEach(processCodeBlocks);
     if (settings.memoryEnabled) {
-        $('#chat .mes').each(function() {
+        $('#chat .mes').each(function () {
             const messageId = $(this).attr('mesid');
             if (messageId) statsTracker.addMemoryButtonToMessage(messageId);
         });
     }
-    if (templateSettings.get().enabled) {}
 }
 
+// ============ 设置界面模块 ============
 async function setupSettings() {
     try {
         const settingsContainer = await waitForElement("#extensions_settings");
@@ -734,7 +713,8 @@ async function setupSettings() {
         const settingsHtml = await response.text();
         $(settingsContainer).append(settingsHtml);
 
-        $("#xiaobaix_enabled").prop("checked", settings.enabled).on("change", function() {
+        // 总开关设置
+        $("#xiaobaix_enabled").prop("checked", settings.enabled).on("change", function () {
             const wasEnabled = settings.enabled;
             settings.enabled = $(this).prop("checked");
             isXiaobaixEnabled = settings.enabled;
@@ -747,13 +727,15 @@ async function setupSettings() {
 
         if (!settings.enabled) toggleSettingsControls(false);
 
-        $("#xiaobaix_sandbox").prop("checked", settings.sandboxMode).on("change", function() {
+        // 基础设置
+        $("#xiaobaix_sandbox").prop("checked", settings.sandboxMode).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.sandboxMode = $(this).prop("checked");
             saveSettingsDebounced();
         });
 
-        $("#xiaobaix_memory_enabled").prop("checked", settings.memoryEnabled).on("change", function() {
+        // 内存设置
+        $("#xiaobaix_memory_enabled").prop("checked", settings.memoryEnabled).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.memoryEnabled = $(this).prop("checked");
             saveSettingsDebounced();
@@ -765,7 +747,7 @@ async function setupSettings() {
             }
         });
 
-        $("#xiaobaix_memory_inject").prop("checked", settings.memoryInjectEnabled).on("change", function() {
+        $("#xiaobaix_memory_inject").prop("checked", settings.memoryInjectEnabled).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.memoryInjectEnabled = $(this).prop("checked");
             saveSettingsDebounced();
@@ -775,7 +757,7 @@ async function setupSettings() {
             }
         });
 
-        $("#xiaobaix_memory_depth").val(settings.memoryInjectDepth).on("change", function() {
+        $("#xiaobaix_memory_depth").val(settings.memoryInjectDepth).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.memoryInjectDepth = parseInt($(this).val()) || 2;
             saveSettingsDebounced();
@@ -784,101 +766,43 @@ async function setupSettings() {
             }
         });
 
-        $("#xiaobaix_recorded_enabled").prop("checked", settings.recorded?.enabled || false).on("change", function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.recorded = extension_settings[EXT_ID].recorded || {};
-            settings.recorded.enabled = enabled;
-            extension_settings[EXT_ID].recorded = settings.recorded;
-            saveSettingsDebounced();
+        // 功能模块设置
+        const moduleConfigs = [
+            { id: 'xiaobaix_recorded_enabled', key: 'recorded' },
+            { id: 'xiaobaix_immersive_enabled', key: 'immersive', init: initImmersiveMode },
+            { id: 'xiaobaix_preview_enabled', key: 'preview', init: initMessagePreview },
+            { id: 'xiaobaix_script_assistant', key: 'scriptAssistant', init: initScriptAssistant },
+            { id: 'scheduled_tasks_enabled', key: 'tasks', init: initTasks },
+            { id: 'xiaobaix_template_enabled', key: 'templateEditor', init: initTemplateEditor },
+            { id: 'wallhaven_enabled', key: 'wallhaven', init: initWallhavenBackground },
+            { id: 'character_updater_enabled', key: 'characterUpdater', init: initCharacterUpdater }
+        ];
+
+        moduleConfigs.forEach(({ id, key, init }) => {
+            $(`#${id}`).prop("checked", settings[key]?.enabled || false).on("change", function () {
+                if (!isXiaobaixEnabled) return;
+                const enabled = $(this).prop('checked');
+                settings[key] = extension_settings[EXT_ID][key] || {};
+                settings[key].enabled = enabled;
+                if (key === 'characterUpdater') {
+                    settings[key].showNotifications = enabled;
+                }
+                extension_settings[EXT_ID][key] = settings[key];
+                saveSettingsDebounced();
+                
+                if (moduleCleanupFunctions.has(key)) {
+                    moduleCleanupFunctions.get(key)();
+                    moduleCleanupFunctions.delete(key);
+                }
+                if (enabled && init) init();
+            });
         });
 
-        $('#xiaobaix_immersive_enabled').prop("checked", settings.immersive?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.immersive = extension_settings[EXT_ID].immersive || {};
-            settings.immersive.enabled = enabled;
-            extension_settings[EXT_ID].immersive = settings.immersive;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('immersiveMode')) moduleCleanupFunctions.get('immersiveMode')();
-            if (enabled) initImmersiveMode();
-        });
-
-        $('#xiaobaix_preview_enabled').prop("checked", settings.preview?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.preview = extension_settings[EXT_ID].preview || {};
-            settings.preview.enabled = enabled;
-            extension_settings[EXT_ID].preview = settings.preview;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('messagePreview')) moduleCleanupFunctions.get('messagePreview')();
-            if (enabled) initMessagePreview();
-        });
-
-        $('#xiaobaix_script_assistant').prop("checked", settings.scriptAssistant?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.scriptAssistant = extension_settings[EXT_ID].scriptAssistant || {};
-            settings.scriptAssistant.enabled = enabled;
-            extension_settings[EXT_ID].scriptAssistant = settings.scriptAssistant;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('scriptAssistant')) moduleCleanupFunctions.get('scriptAssistant')();
-            if (enabled) initScriptAssistant();
-        });
-
-        $('#scheduled_tasks_enabled').prop("checked", settings.tasks?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.tasks = extension_settings[EXT_ID].tasks || {};
-            settings.tasks.enabled = enabled;
-            extension_settings[EXT_ID].tasks = settings.tasks;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('scheduledTasks')) moduleCleanupFunctions.get('scheduledTasks')();
-            if (enabled) initTasks();
-        });
-
-        $('#xiaobaix_template_enabled').prop("checked", settings.templateEditor?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.templateEditor = extension_settings[EXT_ID].templateEditor || {};
-            settings.templateEditor.enabled = enabled;
-            extension_settings[EXT_ID].templateEditor = settings.templateEditor;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('templateEditor')) moduleCleanupFunctions.get('templateEditor')();
-            if (enabled) initTemplateEditor();
-        });
-
-        $('#wallhaven_enabled').prop("checked", settings.wallhaven?.enabled || false).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.wallhaven = extension_settings[EXT_ID].wallhaven || {};
-            settings.wallhaven.enabled = enabled;
-            extension_settings[EXT_ID].wallhaven = settings.wallhaven;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('wallhavenBackground')) moduleCleanupFunctions.get('wallhavenBackground')();
-            if (enabled) initWallhavenBackground();
-        });
-
-        $('#character_updater_enabled').prop("checked", settings.characterUpdater?.enabled ?? true).on('change', function() {
-            if (!isXiaobaixEnabled) return;
-            const enabled = $(this).prop('checked');
-            settings.characterUpdater = extension_settings[EXT_ID].characterUpdater || {};
-            settings.characterUpdater.enabled = enabled;
-            // Automatically manage notifications: enabled when module is enabled, disabled when module is disabled
-            settings.characterUpdater.showNotifications = enabled;
-            saveSettingsDebounced();
-            if (moduleCleanupFunctions.has('characterUpdater')) {
-                moduleCleanupFunctions.get('characterUpdater')();
-                moduleCleanupFunctions.delete('characterUpdater');
-            }
-            if (enabled) initCharacterUpdater();
-        });
-
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function setupMenuTabs() {
-    $(document).on('click', '.menu-tab', function() {
+    $(document).on('click', '.menu-tab', function () {
         const targetId = $(this).attr('data-target');
         $('.menu-tab').removeClass('active');
         $('.settings-section').hide();
@@ -894,6 +818,7 @@ function setupMenuTabs() {
     }, 300);
 }
 
+// ============ 事件监听模块 ============
 function setupEventListeners() {
     if (!isXiaobaixEnabled) return;
 
@@ -922,29 +847,24 @@ function setupEventListeners() {
         }, isReceived ? 300 : 100);
     };
 
-    const messageReceivedHandler = (data) => handleMessage(data, true);
-    eventSource.on(event_types.MESSAGE_RECEIVED, messageReceivedHandler);
-    globalEventListeners.push({ target: eventSource, event: event_types.MESSAGE_RECEIVED, handler: messageReceivedHandler, isEventSource: true });
+    // 消息事件
+    const messageEvents = [
+        { event: event_types.MESSAGE_RECEIVED, handler: (data) => handleMessage(data, true) },
+        { event: event_types.USER_MESSAGE_RENDERED, handler: handleMessage },
+        { event: event_types.CHARACTER_MESSAGE_RENDERED, handler: handleMessage },
+        { event: event_types.MESSAGE_SWIPED, handler: handleMessage },
+        { event: event_types.MESSAGE_EDITED, handler: handleMessage },
+        { event: event_types.MESSAGE_UPDATED, handler: handleMessage }
+    ];
 
-    eventSource.on(event_types.USER_MESSAGE_RENDERED, handleMessage);
-    globalEventListeners.push({ target: eventSource, event: event_types.USER_MESSAGE_RENDERED, handler: handleMessage, isEventSource: true });
+    messageEvents.forEach(({ event, handler }) => {
+        if (event) {
+            eventSource.on(event, handler);
+            globalEventListeners.push({ target: eventSource, event, handler, isEventSource: true });
+        }
+    });
 
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, handleMessage);
-    globalEventListeners.push({ target: eventSource, event: event_types.CHARACTER_MESSAGE_RENDERED, handler: handleMessage, isEventSource: true });
-
-    if (event_types.MESSAGE_SWIPED) {
-        eventSource.on(event_types.MESSAGE_SWIPED, handleMessage);
-        globalEventListeners.push({ target: eventSource, event: event_types.MESSAGE_SWIPED, handler: handleMessage, isEventSource: true });
-    }
-    if (event_types.MESSAGE_EDITED) {
-        eventSource.on(event_types.MESSAGE_EDITED, handleMessage);
-        globalEventListeners.push({ target: eventSource, event: event_types.MESSAGE_EDITED, handler: handleMessage, isEventSource: true });
-    }
-    if (event_types.MESSAGE_UPDATED) {
-        eventSource.on(event_types.MESSAGE_UPDATED, handleMessage);
-        globalEventListeners.push({ target: eventSource, event: event_types.MESSAGE_UPDATED, handler: handleMessage, isEventSource: true });
-    }
-
+    // 聊天变更事件
     const chatChangedHandler = async () => {
         if (!isXiaobaixEnabled) return;
 
@@ -980,7 +900,7 @@ function setupEventListeners() {
                 } else if (settings.memoryInjectEnabled) {
                     statsTracker.updateMemoryPrompt();
                 }
-            } catch (error) {}
+            } catch (error) { }
         }, 500);
         addGlobalTimer(timer2);
     };
@@ -991,47 +911,61 @@ function setupEventListeners() {
     addGlobalEventListener(window, 'message', handleIframeMessage);
 }
 
+// ============ 全局接口导出 ============
 window.processExistingMessages = processExistingMessages;
 window.renderHtmlInIframe = renderHtmlInIframe;
 window.registerModuleCleanup = registerModuleCleanup;
 window.addGlobalEventListener = addGlobalEventListener;
 window.addGlobalTimer = addGlobalTimer;
+window.updateLittleWhiteBoxExtension = updateLittleWhiteBoxExtension;
+window.removeAllUpdateNotices = removeAllUpdateNotices;
 
+// ============ 主入口 ============
 jQuery(async () => {
     try {
         isXiaobaixEnabled = settings.enabled;
         window.isXiaobaixEnabled = isXiaobaixEnabled;
 
+        // 加载样式
         const response = await fetch(`${extensionFolderPath}/style.css`);
         const styleElement = document.createElement('style');
         styleElement.textContent = await response.text();
         document.head.appendChild(styleElement);
 
+        // 初始化核心模块
         moduleInstances.statsTracker = statsTracker;
         statsTracker.init(EXT_ID, MODULE_NAME, settings, executeSlashCommand);
 
         await setupSettings();
-        if(isXiaobaixEnabled) setupEventListeners();
+        if (isXiaobaixEnabled) setupEventListeners();
 
         // 监听app_ready事件以执行扩展更新检查
         eventSource.on(event_types.APP_READY, () => {
-            // 延迟执行更新检查，确保UI完全加载
             setTimeout(performExtensionUpdateCheck, 2000);
         });
 
-        if (isXiaobaixEnabled){
-            if (settings.tasks?.enabled) initTasks();
-            if (settings.scriptAssistant?.enabled) initScriptAssistant();
-            if (settings.immersive?.enabled) initImmersiveMode();
-            if (settings.templateEditor?.enabled) initTemplateEditor();
-            if (settings.wallhaven?.enabled) initWallhavenBackground();
-            if (settings.characterUpdater?.enabled) initCharacterUpdater();
+        // 初始化功能模块
+        if (isXiaobaixEnabled) {
+            const moduleInits = [
+                { condition: settings.tasks?.enabled, init: initTasks },
+                { condition: settings.scriptAssistant?.enabled, init: initScriptAssistant },
+                { condition: settings.immersive?.enabled, init: initImmersiveMode },
+                { condition: settings.templateEditor?.enabled, init: initTemplateEditor },
+                { condition: settings.wallhaven?.enabled, init: initWallhavenBackground },
+                { condition: settings.characterUpdater?.enabled, init: initCharacterUpdater }
+            ];
+
+            moduleInits.forEach(({ condition, init }) => {
+                if (condition) init();
+            });
+
             if (settings.preview?.enabled || settings.recorded?.enabled) {
                 const timer2 = setTimeout(initMessagePreview, 1500);
                 addGlobalTimer(timer2);
             }
         }
 
+        // 延迟任务
         const timer1 = setTimeout(setupMenuTabs, 500);
         addGlobalTimer(timer1);
 
@@ -1041,6 +975,7 @@ jQuery(async () => {
             }
         }, 2000));
 
+        // 处理现有消息和统计
         const timer3 = setTimeout(async () => {
             if (isXiaobaixEnabled) {
                 processExistingMessages();
@@ -1059,12 +994,13 @@ jQuery(async () => {
         }, 1000);
         addGlobalTimer(timer3);
 
+        // 定期处理消息
         const intervalId = setInterval(() => {
             if (isXiaobaixEnabled) processExistingMessages();
         }, 5000);
         addGlobalTimer(intervalId);
 
-    } catch (err) {}
+    } catch (err) { }
 });
 
 export { executeSlashCommand };

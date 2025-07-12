@@ -794,13 +794,24 @@ class TemplateProcessor {
         return (trimmed.startsWith('{') || trimmed.startsWith('['));
     }
 
-    static replaceVars(tmpl, vars) {
-        return tmpl?.replace(/\[\[([^\]]+)\]\]/g, (match, varName) => {
-            const cleanVarName = varName.trim();
-            const value = vars[cleanVarName] ?? match;
-            return `<bdi data-xiaobaix-var="${cleanVarName}">${value}</bdi>`;
-        }) || '';
-    }
+	static replaceVars(tmpl, vars) {
+	    return tmpl?.replace(/\[\[([^\]]+)\]\]/g, (match, varName) => {
+	        const cleanVarName = varName.trim();
+	        let value = vars[cleanVarName];
+	        
+	        if (value === null || value === undefined) {
+	            value = '';
+	        } else if (Array.isArray(value)) {
+	            value = value.join(', ');
+	        } else if (typeof value === 'object') {
+	            value = JSON.stringify(value);
+	        } else {
+	            value = String(value);
+	        }
+	        
+	        return `<bdi data-xiaobaix-var="${cleanVarName}">${value}</bdi>`;
+	    }) || '';
+	}
 }
 
 class IframeManager {
@@ -873,22 +884,30 @@ static createWrapper(content) {
             }
         };
 
-        window.updateTemplateVariables = function(variables) {
-            Object.entries(variables).forEach(([varName, value]) => {
-                const elements = document.querySelectorAll(\`[data-xiaobaix-var="\${varName}"]\`);
-                elements.forEach(el => {
-                    el.textContent = value;
-                    el.style.display = '';
-                });
-            });
-
-            if (typeof window.updateAllData === 'function') {
-                window.updateAllData();
-            }
-
-            window.dispatchEvent(new Event('contentUpdated'));
-            window.STBridge.updateHeight();
-        };
+		window.updateTemplateVariables = function(variables) {
+		    Object.entries(variables).forEach(([varName, value]) => {
+		        const elements = document.querySelectorAll(\`[data-xiaobaix-var="\${varName}"]\`);
+		        elements.forEach(el => {
+		            if (value === null || value === undefined) {
+		                el.textContent = '';
+		            } else if (Array.isArray(value)) {
+		                el.textContent = value.join(', ');
+		            } else if (typeof value === 'object') {
+		                el.textContent = JSON.stringify(value);
+		            } else {
+		                el.textContent = String(value);
+		            }
+		            el.style.display = '';
+		        });
+		    });
+		
+		    if (typeof window.updateAllData === 'function') {
+		        window.updateAllData();
+		    }
+		
+		    window.dispatchEvent(new Event('contentUpdated'));
+		    window.STBridge.updateHeight();
+		};
 
         window.STscript = async function(command) {
             return new Promise((resolve, reject) => {
