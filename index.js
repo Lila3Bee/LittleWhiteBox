@@ -182,7 +182,7 @@ function addUpdateDownloadButton() {
     const updateButton = document.createElement('div');
     updateButton.id = 'littlewhitebox-update-extension';
     updateButton.className = 'menu_button fa-solid fa-cloud-arrow-down interactable has-update';
-    updateButton.title = '下載並安裝小白x的更新';
+    updateButton.title = '下载并安装小白x的更新';
     updateButton.tabIndex = 0;
 
     try {
