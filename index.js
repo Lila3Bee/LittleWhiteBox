@@ -151,15 +151,13 @@ function addUpdateTextNotice() {
     }
 
     if (headerElement.querySelector('.littlewhitebox-update-text')) {
-        console.log('[小白X] 文字更新提示已存在');
         return;
     }
 
-    const updateTextSpan = document.createElement('span');
-    updateTextSpan.className = 'littlewhitebox-update-text';
-    updateTextSpan.textContent = '(有可用更新)';
-    headerElement.appendChild(updateTextSpan);
-    console.log('[小白X] 已添加文字更新提示到标题');
+    const updateTextSmall = document.createElement('small');
+    updateTextSmall.className = 'littlewhitebox-update-text';
+    updateTextSmall.textContent = '(有可用更新)';
+    headerElement.appendChild(updateTextSmall);
 }
 
 function addUpdateDownloadButton() {
@@ -169,7 +167,6 @@ function addUpdateDownloadButton() {
     for (const divider of sectionDividers) {
         if (divider.textContent && divider.textContent.includes('总开关')) {
             totalSwitchDivider = divider;
-            console.log('[小白X] 找到总开关标题元素');
             break;
         }
     }
