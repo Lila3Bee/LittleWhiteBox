@@ -255,7 +255,6 @@ function addGlobalTimer(timerId) {
 }
 
 function cleanupAllResources() {
-    // 清理事件监听器
     globalEventListeners.forEach(({ target, event, handler, options, isEventSource }) => {
         try {
             if (isEventSource && target.removeListener) {
@@ -269,7 +268,6 @@ function cleanupAllResources() {
     });
     globalEventListeners.length = 0;
 
-    // 清理计时器
     globalTimers.forEach(timerId => {
         try {
             clearTimeout(timerId);
@@ -280,7 +278,6 @@ function cleanupAllResources() {
     });
     globalTimers.length = 0;
 
-    // 清理模块
     moduleCleanupFunctions.forEach((cleanupFn, moduleName) => {
         try {
             cleanupFn();
@@ -290,7 +287,6 @@ function cleanupAllResources() {
     });
     moduleCleanupFunctions.clear();
 
-    // 清理DOM元素
     document.querySelectorAll('iframe.xiaobaix-iframe, .xiaobaix-iframe-wrapper').forEach(el => el.remove());
     document.querySelectorAll('.memory-button, .mes_history_preview').forEach(btn => btn.remove());
     document.querySelectorAll('#message_preview_btn').forEach(btn => {
@@ -620,7 +616,6 @@ function toggleAllFeatures(enabled) {
         setTimeout(() => processExistingMessages(), 100);
         setupEventListeners();
 
-        // 延迟启动各模块
         if (settings.memoryEnabled && moduleInstances.statsTracker?.updateMemoryPrompt) 
             setTimeout(() => moduleInstances.statsTracker.updateMemoryPrompt(), 200);
         if (extension_settings[EXT_ID].scriptAssistant?.enabled && window.injectScriptDocs) 
@@ -707,7 +702,6 @@ async function setupSettings() {
         const settingsHtml = await response.text();
         $(settingsContainer).append(settingsHtml);
 
-        // 总开关设置
         $("#xiaobaix_enabled").prop("checked", settings.enabled).on("change", function () {
             const wasEnabled = settings.enabled;
             settings.enabled = $(this).prop("checked");
@@ -721,14 +715,12 @@ async function setupSettings() {
 
         if (!settings.enabled) toggleSettingsControls(false);
 
-        // 基础设置
         $("#xiaobaix_sandbox").prop("checked", settings.sandboxMode).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.sandboxMode = $(this).prop("checked");
             saveSettingsDebounced();
         });
 
-        // 内存设置
         $("#xiaobaix_memory_enabled").prop("checked", settings.memoryEnabled).on("change", function () {
             if (!isXiaobaixEnabled) return;
             settings.memoryEnabled = $(this).prop("checked");
@@ -760,7 +752,6 @@ async function setupSettings() {
             }
         });
 
-        // 功能模块设置
         const moduleConfigs = [
             { id: 'xiaobaix_recorded_enabled', key: 'recorded' },
             { id: 'xiaobaix_immersive_enabled', key: 'immersive', init: initImmersiveMode },
@@ -841,7 +832,6 @@ function setupEventListeners() {
         }, isReceived ? 300 : 100);
     };
 
-    // 消息事件
     const messageEvents = [
         { event: event_types.MESSAGE_RECEIVED, handler: (data) => handleMessage(data, true) },
         { event: event_types.USER_MESSAGE_RENDERED, handler: handleMessage },
@@ -858,7 +848,6 @@ function setupEventListeners() {
         }
     });
 
-    // 聊天变更事件
     const chatChangedHandler = async () => {
         if (!isXiaobaixEnabled) return;
 
@@ -920,25 +909,21 @@ jQuery(async () => {
         isXiaobaixEnabled = settings.enabled;
         window.isXiaobaixEnabled = isXiaobaixEnabled;
 
-        // 加载样式
         const response = await fetch(`${extensionFolderPath}/style.css`);
         const styleElement = document.createElement('style');
         styleElement.textContent = await response.text();
         document.head.appendChild(styleElement);
 
-        // 初始化核心模块
         moduleInstances.statsTracker = statsTracker;
         statsTracker.init(EXT_ID, MODULE_NAME, settings, executeSlashCommand);
 
         await setupSettings();
         if (isXiaobaixEnabled) setupEventListeners();
 
-        // 监听app_ready事件以执行扩展更新检查
         eventSource.on(event_types.APP_READY, () => {
             setTimeout(performExtensionUpdateCheck, 2000);
         });
 
-        // 初始化功能模块
         if (isXiaobaixEnabled) {
             const moduleInits = [
                 { condition: settings.tasks?.enabled, init: initTasks },
@@ -959,7 +944,6 @@ jQuery(async () => {
             }
         }
 
-        // 延迟任务
         const timer1 = setTimeout(setupMenuTabs, 500);
         addGlobalTimer(timer1);
 
@@ -969,7 +953,6 @@ jQuery(async () => {
             }
         }, 2000));
 
-        // 处理现有消息和统计
         const timer3 = setTimeout(async () => {
             if (isXiaobaixEnabled) {
                 processExistingMessages();
@@ -988,7 +971,6 @@ jQuery(async () => {
         }, 1000);
         addGlobalTimer(timer3);
 
-        // 定期处理消息
         const intervalId = setInterval(() => {
             if (isXiaobaixEnabled) processExistingMessages();
         }, 5000);
