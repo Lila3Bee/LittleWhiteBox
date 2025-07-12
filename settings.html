@@ -1,0 +1,459 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+<div class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>小白X</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <div class="littlewhitebox settings-grid">
+            <div class="settings-menu-vertical">
+                <div class="menu-tab active" data-target="js-memory" style="border-bottom: 1px solid #303030;"><span class="vertical-text">小白X模板</span></div>
+                <div class="menu-tab" data-target="task" style="border-bottom: 1px solid #303030;"><span class="vertical-text">循环任务</span></div>
+                <div class="menu-tab" data-target="wallhaven" style="border-bottom: 1px solid #303030;"><span class="vertical-text">自动插图</span></div>
+                <div class="menu-tab" data-target="template"><span class="vertical-text">辅助工具</span></div>
+            </div>
+            <div class="settings-content">
+                <div class="js-memory settings-section" style="display: block;">
+                    <div class="section-divider">总开关<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_enabled" />
+                        <label for="xiaobaix_enabled" class="has-tooltip" data-tooltip="渲染被```包裹的html、!DOCTYPE、script的代码块内容为交互式界面
+
+                        提供STscript(command)异步函数执行酒馆命令:
+
+                        await STscript('/echo 你好世界！')">启用小白X</label>
+                    </div>
+                    <br>
+                    <div class="section-divider">内容隔离与布局控制<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_sandbox" />
+                        <label for="xiaobaix_sandbox">沙盒模式</label>
+                    </div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_immersive_enabled" />
+                        <label for="xiaobaix_immersive_enabled" class="has-tooltip" data-tooltip="优化聊天视图，提升沉浸感，尤其是手机的显示">启用沉浸式显示模式</label>
+                    </div>
+                    <br>
+                    <div class="section-divider">模板功能<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_template_enabled" />
+                        <label for="xiaobaix_template_enabled" class="has-tooltip" data-tooltip="将你的UI界面作为AI消息提前展示，再从流式文本中动态渲染。">启用沉浸式模板</label>
+                    </div>
+
+                    <div id="current_template_settings">
+                        <div class="template-replacer-header">
+                            <div class="template-replacer-title">当前角色模板设置</div>
+                            <div class="template-replacer-controls">
+                                <button id="open_template_editor" class="menu_button menu_button_icon">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                    <small>编辑模板</small>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="template-replacer-status" id="template_character_status">
+                            请选择一个角色
+                        </div>
+                    </div>
+                    <div class="section-divider">功能说明<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <p>沉浸式模板教学文档⮕<a href="https://littlewhitebox.pages.dev" class="download-link" target="_blank">教学文档</a></p>
+                    </div>
+
+                </div>
+                <div class="wallhaven settings-section" style="display: none;">
+                    <div class="section-divider">自动消息配图<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="wallhaven_enabled" />
+                        <label for="wallhaven_enabled" class="has-tooltip" data-tooltip="AI回复时自动提取消息内容，转换为标签并获取Wallhaven图片作为聊天背景">启用自动消息配图</label>
+                    </div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="wallhaven_bg_mode" />
+                        <label for="wallhaven_bg_mode">背景图模式（纯场景）</label>
+                    </div>
+                    <div class="flex-container">
+                        <label for="wallhaven_category" id="section-font">图片分类:</label>
+                        <select id="wallhaven_category" class="text_pole">
+                            <option value="010">动漫漫画</option>
+                            <option value="111">全部类型</option>
+                            <option value="001">人物写真</option>
+                            <option value="100">综合壁纸</option>
+                        </select>
+                    </div>
+                    <div class="flex-container">
+                        <label for="wallhaven_purity" id="section-font">内容分级:</label>
+                        <select id="wallhaven_purity" class="text_pole">
+                            <option value="100">仅 SFW</option>
+                            <option value="010">仅 Sketchy (轻微)</option>
+                            <option value="110">SFW + Sketchy</option>
+                            <option value="001">仅 NSFW</option>
+                            <option value="011">Sketchy + NSFW</option>
+                            <option value="111">全部内容</option>
+                        </select>
+                    </div>
+                    <div class="flex-container">
+                        <label for="wallhaven_opacity" id="section-font">黑纱透明度: <span id="wallhaven_opacity_value">30%</span></label>
+                        <input type="range" id="wallhaven_opacity" min="0" max="0.8" step="0.1" value="0.3" class="wide50p" />
+                    </div>
+                    <hr class="sysHR">
+                    <div class="flex-container">
+                        <input type="text" id="wallhaven_custom_tag_input" placeholder="输入英文标签，如: beautiful girl" class="text_pole wide50p" />
+                        <button id="wallhaven_add_custom_tag" class="menu_button" type="button">+自定义TAG</button>
+                    </div>
+                    <div id="wallhaven_custom_tags_container" class="custom-tags-container">
+                        <div id="wallhaven_custom_tags_list" class="custom-tags-list"></div>
+                    </div>
+                    <hr class="sysHR">
+                </div>
+                <div class="task settings-section" style="display: none;">
+                    <div class="section-divider">循环任务<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="scheduled_tasks_enabled" />
+                        <label for="scheduled_tasks_enabled" class="has-tooltip" data-tooltip="自动执行设定好的斜杠命令
+                        输入/xbqte {{任务名称}}可以手动激活任务
+                        导出/入角色卡时, 角色任务会随角色卡一起导出/入">启用循环任务</label>
+                    </div>
+                    <div class="flex-container">
+                        <div id="add_global_task" class="menu_button menu_button_icon" title="添加全局任务">
+                            <i class="fa-solid fa-plus"></i>
+                            <small>+全局</small>
+                        </div>
+                        <div id="add_character_task" class="menu_button menu_button_icon" title="添加角色任务">
+                            <i class="fa-solid fa-user-plus"></i>
+                            <small>+ 角色</small>
+                        </div>
+                        <div id="test_all_tasks" class="menu_button menu_button_icon" title="测试所有任务">
+                            <i class="fa-solid fa-play"></i>
+                            <small>测试全部</small>
+                        </div>
+                    </div>
+                    <div id="global_tasks_block" class="padding5">
+                        <div>
+                            <strong>全局任务</strong>
+                        </div>
+                        <small>这些任务在所有角色中的聊天都会执行</small>
+                        <div id="global_tasks_list" class="flex-container task-container flexFlowColumn"></div>
+                    </div>
+                    <hr />
+                    <div id="character_tasks_block" class="padding5">
+                        <div class="flex-container alignItemsCenter">
+                            <strong>角色任务</strong>
+                            <div class="flex-container">
+                                <div id="export_character_tasks" class="menu_button menu_button_icon" title="导出角色任务">
+                                    <i class="fa-solid fa-download"></i>
+                                    <small>导出</small>
+                                </div>
+                                <div id="import_character_tasks" class="menu_button menu_button_icon" title="导入角色任务">
+                                    <i class="fa-solid fa-upload"></i>
+                                    <small>导入</small>
+                                </div>
+                            </div>
+                        </div>
+                        <small>这些任务只在当前角色的聊天中执行</small>
+                        <div id="character_tasks_list" class="flex-container task-container flexFlowColumn"></div>
+                        <input type="file" id="import_tasks_file" accept=".json" style="display: none;" />
+                    </div>
+                    <hr class="sysHR">
+                </div>
+                <div class="template settings-section" style="display: none;">
+                    <div class="section-divider">统计功能<hr class="sysHR"></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_memory_enabled" />
+                        <label for="xiaobaix_memory_enabled" class="has-tooltip" data-tooltip="启用后将统计消息数据">启用数据统计</label>
+                    </div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_memory_inject" />
+                        <label for="xiaobaix_memory_inject" class="has-tooltip" data-tooltip="将统计信息注入到提示词中">注入统计信息到提示词</label>
+                    </div>
+                    <div class="flex-container">
+                        <label for="xiaobaix_memory_depth">信息注入深度:</label>
+                        <input type="number" id="xiaobaix_memory_depth" min="1" max="20" class="dark-number-input" />
+                    </div>
+                    <br>
+                    <div class="section-divider">预览功能<hr class="sysHR"></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_recorded_enabled" />
+                        <label for="xiaobaix_recorded_enabled" class="has-tooltip" data-tooltip="每条消息添加小便条纸，点击可看到发送给时AI的记录">启用消息记录</label>
+                    </div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_preview_enabled" />
+                        <label for="xiaobaix_preview_enabled" class="has-tooltip" data-tooltip="在聊天框下方显示大便条纸图标，点击可预览将发送给AI的消息">启用消息预览</label>
+                    </div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="xiaobaix_script_assistant" />
+                        <label for="xiaobaix_script_assistant" class="has-tooltip" data-tooltip="勾选后，AI将获取小白X功能和ST脚本语言知识，帮助您创作角色卡">启用写卡助手</label>
+                    </div>
+                    <div class="section-divider">角色卡自动更新<hr class="sysHR" /></div>
+                    <div class="flex-container">
+                        <input type="checkbox" id="character_updater_enabled" />
+                        <label for="character_updater_enabled" class="has-tooltip" data-tooltip="启用角色卡云端同步和更新功能">启用角色卡更新</label>
+                    </div>
+                    <div class="current-character-info" id="current-character-info-trigger" title="单击更新角色，长按5秒绑定/重绑定">
+                        <span id="current-character-name" class="current-character-name">未选择角色</span>
+                        <span id="current-character-status" class="character-status"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="task_editor_template" style="display: none;">
+    <div class="task_editor">
+        <h3>任务编辑器</h3>
+        <div class="flex-container flexFlowColumn">
+            <div class="flex1">
+                <label for="task_name_edit">任务名称</label>
+                <input class="task_name_edit text_pole textarea_compact" type="text" placeholder="输入任务名称" />
+            </div>
+            <div class="flex1">
+                <label for="task_commands_edit">斜杠命令</label>
+                <textarea class="task_commands_edit text_pole wide100p textarea_compact"
+                    placeholder="输入要执行的斜杠命令, eg: /buttons labels=[&quot;男&quot;,&quot;女&quot;] 你是？ | /echo 你选择了：{{pipe}}"></textarea>
+            </div>
+            <div class="flex-container">
+                <div class="flex1">
+                    <label for="task_interval_edit">楼层间隔</label>
+                    <input class="task_interval_edit text_pole textarea_compact" type="number" min="0" max="100" />
+                    <small>每隔多少楼层执行一次（设为0手动激活）</small>
+                </div>
+                <div class="flex1">
+                    <label for="task_floor_type_edit">楼层类型</label>
+                    <select class="task_floor_type_edit text_pole textarea_compact">
+                        <option value="all">全部楼层</option>
+                        <option value="user">用户楼层</option>
+                        <option value="llm">LLM楼层</option>
+                    </select>
+                    <small>选择计算楼层的方式</small>
+                </div>
+            </div>
+            <div class="flex-container">
+                <div class="flex1">
+                    <label for="task_type_edit">任务类型</label>
+                    <select class="task_type_edit text_pole textarea_compact">
+                        <option value="global" id="section-font">全局任务</option>
+                        <option value="character" id="section-font">角色任务</option>
+                    </select>
+                </div>
+                <div class="flex1">
+                    <label for="task_trigger_timing_edit">触发时机</label>
+                    <select class="task_trigger_timing_edit text_pole textarea_compact">
+                        <option value="after_ai">AI消息后</option>
+                        <option value="before_user">用户消息后</option>
+                        <option value="per_turn">每轮对话</option>
+                    </select>
+                    <small>选择任务执行的时机</small>
+                </div>
+            </div>
+            <div class="flex1">
+                <label class="checkbox flex-container">
+                    <input type="checkbox" class="task_enabled_edit" />
+                    <span>启用任务</span>
+                </label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="task_item_template" style="display: none;">
+    <div class="task-item flex-container flexnowrap">
+        <span class="drag-handle menu-handle">&#9776;</span>
+        <div class="task_name flexGrow overflow-hidden"></div>
+        <div class="flex-container flexnowrap">
+            <label class="checkbox flex-container">
+                <input type="checkbox" class="disable_task" />
+                <span class="task-toggle-on fa-solid fa-toggle-on" title="禁用任务"></span>
+                <span class="task-toggle-off fa-solid fa-toggle-off" title="启用任务"></span>
+            </label>
+            <div class="test_task menu_button" title="测试任务"><i class="fa-solid fa-play"></i></div>
+            <div class="edit_task menu_button" title="编辑任务"><i class="fa-solid fa-pencil"></i></div>
+            <div class="delete_task menu_button" title="删除任务"><i class="fa-solid fa-trash"></i></div>
+        </div>
+    </div>
+</div>
+
+<div id="task_preview_template" style="display: none;">
+    <div class="task-preview">
+        <strong class="task-preview-name"></strong> <span class="task-preview-interval"></span>
+        <div class="task-commands task-preview-commands"></div>
+    </div>
+</div>
+
+<style>
+.littlewhitebox, .littlewhitebox * {
+  font-family: 'ZCOOL KuaiLe', 'ZCOOL XiaoWei', sans-serif !important;
+}
+.littlewhitebox i,
+.littlewhitebox .fa,
+.littlewhitebox .fa-solid,
+.littlewhitebox .fa-regular,
+.littlewhitebox .fa-brands {
+  font-family: 'Font Awesome 6 Free', 'FontAwesome', 'Font Awesome 5 Free', 'Font Awesome 5 Brands', sans-serif !important;
+  font-weight: 900 !important;
+}
+.littlewhitebox {
+   display: flex;
+   gap: 1px;
+}
+
+.settings-menu-vertical {
+   display: flex;
+   flex-direction: column;
+   flex: 0.5;
+}
+
+.settings-content {
+   flex: 19;
+   margin-left: 1%;
+   width: 89%;
+}
+
+.menu-tab {
+   flex: none;
+   padding: 8px 6px;
+   text-align: center;
+   cursor: pointer;
+   color: #696969;
+   border: none;
+   transition: color 0.2s ease;
+   font-weight: 500;
+   writing-mode: vertical-rl;
+   text-orientation: mixed;
+}
+
+.menu-tab:hover {
+   color: #fff;
+}
+
+.menu-tab.active {
+   color: #e9e9e9;
+   border-bottom: none;
+   border-left: 2px solid #e9e9e9;
+}
+
+.settings-section {
+   padding: 1% 2% 1% 2%;
+}
+
+.template-replacer-header {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   margin-bottom: 8px;
+}
+
+.template-replacer-title {
+   font-weight: bold;
+   color: #cacaca;
+}
+
+.template-replacer-status {
+   padding: 5px 10px;
+   background: #2a2a2a;
+   border-radius: 4px;
+   margin-bottom: 10px;
+   font-size: 0.9em;
+}
+
+.template-replacer-status.has-settings {
+   background: #1a4a1a;
+   color: #90ee90;
+}
+
+.template-replacer-status.no-character {
+   background: #4a1a1a;
+   color: #ffb3b3;
+}
+
+.dark-number-input {
+   background-color: rgba(0, 0, 0, 0.3) !important;
+   color: var(--SmartThemeText) !important;
+   border-color: var(--SmartThemeBorderColor) !important;
+   width: 8vw !important;
+}
+.littlewhitebox input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 0.13em solid #222;
+  background: #181818;
+  border-radius: 0.25em;
+  display: inline-block;
+  position: relative;
+  vertical-align: middle;
+  margin-right: 0em;
+  transition: border 0.2s, background 0.2s;
+  box-shadow: 0 0.07em 0.13em rgba(0,0,0,0.08);
+}
+.littlewhitebox input[type="checkbox"]:checked {
+  background: #181818;
+  border-color: #000000;
+}
+.littlewhitebox input[type="checkbox"]:checked::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 18%;
+  left: 18%;
+  width: 64%;
+  height: 64%;
+  background: #999999;
+  border-radius: 0.13em;
+}
+.littlewhitebox input[type="checkbox"] + label {
+  color: #888;
+  transition: color 0.2s;
+}
+.littlewhitebox input[type="checkbox"]:checked + label {
+  color: #dbdbdb;
+}
+
+.section-divider {
+  font-size: 0.75em;
+  color: #8f8f8f;
+  margin: 0.5em 0 0.2em 0;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+  text-align: left;
+  user-select: none;
+}
+
+#section-font {
+  color: #979797;
+}
+
+.has-tooltip {
+  position: relative;
+  cursor: pointer;
+}
+
+.has-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: 120%;
+  transform: translateX(-50%) translateY(-50%);
+  background: #222;
+  color: #e4e4e4;
+  padding: 6px 12px;
+  border-radius: 4px;
+  white-space: pre-line;
+  font-size: 0.9em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 10;
+  min-width: 180px;
+  max-width: 300px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.has-tooltip:hover::after {
+  opacity: 1;
+}
+label{
+    margin-top: 0.3em;
+}
+</style>
