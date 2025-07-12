@@ -124,13 +124,11 @@ const serverAPI = {
 
         if (data) {
             if (useFormData) {
-                // 使用 application/x-www-form-urlencoded 避免 OPTIONS 预检
                 const formData = new URLSearchParams();
                 formData.append('data', JSON.stringify(data));
                 requestOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
                 requestOptions.body = formData;
             } else {
-                // 普通 JSON 请求
                 requestOptions.headers = { 'Content-Type': 'application/json' };
                 requestOptions.body = JSON.stringify(data);
             }
@@ -150,15 +148,15 @@ const serverAPI = {
         return await response.json();
     },
 
-    create: data => serverAPI.request('/create', 'POST', data, true), // 使用 form-urlencoded 避免 OPTIONS 预检
-    update: data => serverAPI.request('/update', 'POST', data, true), // 使用 form-urlencoded 避免 OPTIONS 预检
+    create: data => serverAPI.request('/create', 'POST', data, true),
+    update: data => serverAPI.request('/update', 'POST', data, true),
     batchData: async (characters) => serverAPI.request('/batch/data', 'POST', {
         characters: characters.map((char, index) => ({
             name: char.nameGroup || char.name,
             uniqueValue: char.uniqueValue,
             clientId: index
         }))
-    }, true) // 使用 form-urlencoded 避免 OPTIONS 预检
+    }, true)
 };
 
 const cooldownManager = {
