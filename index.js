@@ -72,7 +72,7 @@ async function checkLittleWhiteBoxUpdate() {
             return { isUpToDate: true, localVersion, remoteVersion };
         }
     } catch (e) {
-        console.warn('[小白X] 检查更新失败:', e);
+        console.warn('[小白X] 检查更新败:', e);
         return null;
     }
 }
