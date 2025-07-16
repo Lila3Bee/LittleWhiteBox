@@ -61,7 +61,14 @@ async function checkLittleWhiteBoxUpdate() {
     try {
         const timestamp = Date.now();
         
-        const localRes = await fetch(`${extensionFolderPath}/manifest.json?t=${timestamp}`);
+        const localRes = await fetch(`${extensionFolderPath}/manifest.json?t=${timestamp}`, {
+            cache: 'no-cache',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+        
         if (!localRes.ok) {
             console.error('[小白X] 无法获取本地manifest:', localRes.status);
             return null;
@@ -70,7 +77,14 @@ async function checkLittleWhiteBoxUpdate() {
         const localVersion = localManifest.version;
         console.log('[小白X] 本地版本:', localVersion);
         
-        const remoteRes = await fetch(`https://raw.githubusercontent.com/Lila3Bee/LittleWhiteBox/main/manifest.json?t=${timestamp}`);
+        const remoteRes = await fetch(`https://raw.githubusercontent.com/Lila3Bee/LittleWhiteBox/main/manifest.json?t=${timestamp}`, {
+            cache: 'no-cache',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+        
         if (!remoteRes.ok) {
             console.error('[小白X] 无法获取远程manifest:', remoteRes.status);
             return null;
@@ -90,9 +104,6 @@ async function checkLittleWhiteBoxUpdate() {
         return null;
     }
 }
-
-
-
 
 async function updateLittleWhiteBoxExtension() {
     try {
