@@ -58,7 +58,7 @@
                     </div>
                     <div class="section-divider">功能说明<hr class="sysHR" /></div>
                     <div class="flex-container">
-                        <p>沉浸式模板教学文档⮕<a href="https://littlewhitebox.pages.dev" class="download-link" target="_blank">教学文档</a></p>
+                        <p>小白X说明文档⮕<a href="https://nine-yellowhorn-b13.notion.site/X-22eb5c27428180bfacbed6e9006a1908?pvs=74" class="download-link" target="_blank">说明文档</a></p>
                     </div>
 
                 </div>
@@ -164,11 +164,7 @@
                     </div>
                     <div class="flex-container">
                         <input type="checkbox" id="xiaobaix_memory_inject" />
-                        <label for="xiaobaix_memory_inject" class="has-tooltip" data-tooltip="将统计信息注入到提示词中">注入统计信息到提示词</label>
-                    </div>
-                    <div class="flex-container">
-                        <label for="xiaobaix_memory_depth">信息注入深度:</label>
-                        <input type="number" id="xiaobaix_memory_depth" min="1" max="20" class="dark-number-input" />
+                        <label for="xiaobaix_memory_inject" class="has-tooltip" data-tooltip="将统计信息注入到提示词中">注入统计信息到提示词 深度：</label><input type="number" id="xiaobaix_memory_depth" min="1" max="20" class="dark-number-input" />
                     </div>
                     <br>
                     <div class="section-divider">Log及助手<hr class="sysHR"></div>
@@ -522,8 +518,6 @@ label{
             button.addEventListener('click', async function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-
-                console.log('[小白X] 用户点击下载更新按钮');
 
                 this.className = 'menu_button fa-solid fa-spinner fa-spin interactable updating';
                 this.style.color = '#007bff';

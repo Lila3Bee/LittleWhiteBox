@@ -205,7 +205,7 @@ async function checkAndExecuteTasks(triggerContext = 'after_ai', overrideChatCha
     if (triggerContext === 'after_ai') lastTurnCount = currentTurnCount;
 }
 
-async function onMessageReceived(messageId) {
+async function onMessageReceived(messageId, type) {
     if (typeof messageId !== 'number' || messageId < 0 || !chat[messageId]) return;
 
     const message = chat[messageId];
@@ -213,7 +213,6 @@ async function onMessageReceived(messageId) {
         isCommandGenerated || isExecutingTask) return;
 
     if (message.swipe_id !== undefined && message.swipe_id > 0) {
-        console.debug('[Tasks] 跳过swipe消息，不触发任务');
         return;
     }
 
@@ -223,11 +222,9 @@ async function onMessageReceived(messageId) {
 
     const messageKey = `${getContext().chatId}_${messageId}_${message.send_date || Date.now()}`;
     if (isMessageProcessed(messageKey)) {
-        console.debug(`[Tasks] 消息已处理，跳过: ${messageKey}`);
         return;
     }
 
-    console.log(`[Tasks] 处理新消息: ${messageKey}, 当前楼层: ${calculateFloorByType('all')}`);
     markMessageAsProcessed(messageKey);
     await checkAndExecuteTasks('after_ai');
     chatJustChanged = isNewChat = false;
@@ -257,7 +254,6 @@ function onMessageDeleted(data) {
     isCommandGenerated = false;
 
     debouncedSave();
-    console.log('[Tasks] 消息删除后清理状态完成');
 }
 
 
@@ -563,7 +559,7 @@ function cleanup() {
     }
     taskLastExecutionTime.clear();
 
-    eventSource.removeListener(event_types.MESSAGE_RECEIVED, onMessageReceived);
+    eventSource.removeListener(event_types.CHARACTER_MESSAGE_RENDERED, onMessageReceived);
     eventSource.removeListener(event_types.USER_MESSAGE_RENDERED, onUserMessage);
     eventSource.removeListener(event_types.CHAT_CHANGED, onChatChanged);
     eventSource.removeListener(event_types.MESSAGE_DELETED, onMessageDeleted);
@@ -709,7 +705,7 @@ function initTasks() {
     $('#scheduled_tasks_enabled').prop('checked', getSettings().enabled);
     refreshTaskLists();
 
-    eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onMessageReceived);
     eventSource.on(event_types.USER_MESSAGE_RENDERED, onUserMessage);
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
     eventSource.on(event_types.MESSAGE_DELETED, onMessageDeleted);
@@ -734,7 +730,6 @@ function initTasks() {
     registerSlashCommands();
     setTimeout(() => { checkEmbeddedTasks(); }, 1000);
 
-    console.log('[Tasks] 插件已加载，内存优化版本');
 }
 
 export { initTasks };

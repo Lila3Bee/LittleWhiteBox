@@ -36,7 +36,7 @@ extension_settings[EXT_ID] = extension_settings[EXT_ID] || {
 const settings = extension_settings[EXT_ID];
 let isXiaobaixEnabled = settings.enabled;
 let moduleInstances = { statsTracker: null };
-let savedSettings = {};
+
 let globalEventListeners = [];
 let globalTimers = [];
 let moduleCleanupFunctions = new Map();
@@ -59,15 +59,12 @@ window.testRemoveUpdateUI = () => {
 async function checkLittleWhiteBoxUpdate() {
     try {
         const requestBody = { extensionName: 'LittleWhiteBox', global: true };
-        console.log('[小白X] 发送版本检查请求:', requestBody);
 
         const response = await fetch('/api/extensions/version', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify(requestBody),
         });
-
-        console.log('[小白X] 响应状态:', response.status, response.statusText);
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -76,7 +73,6 @@ async function checkLittleWhiteBoxUpdate() {
         }
 
         const data = await response.json();
-        console.log('[小白X] 版本检查结果:', data);
         return data;
     } catch (error) {
         console.warn('[小白X] 更新检查失败:', error);
@@ -87,7 +83,6 @@ async function checkLittleWhiteBoxUpdate() {
 async function updateLittleWhiteBoxExtension() {
     try {
         const requestBody = { extensionName: 'LittleWhiteBox', global: true };
-        console.log('[小白X] 发送更新请求:', requestBody);
 
         const response = await fetch('/api/extensions/update', {
             method: 'POST',
@@ -103,9 +98,9 @@ async function updateLittleWhiteBoxExtension() {
         }
 
         const data = await response.json();
-        const message = data.isUpToDate ? '小白X已是最新版本' : `小白X已更新到 ${data.shortCommitHash}`;
+        const message = data.isUpToDate ? '小白X已是最新版本' : `小白X已更新`;
         const title = data.isUpToDate ? '' : '请刷新页面以应用更新';
-        
+
         toastr.success(message, title);
         return true;
     } catch (error) {
@@ -134,7 +129,6 @@ function addUpdateTextNotice() {
         for (const element of elements) {
             if (element.textContent && element.textContent.includes('小白X')) {
                 headerElement = element;
-                console.log('[小白X] 找到标题元素:', selector, element);
                 break;
             }
         }
@@ -169,13 +163,11 @@ function addUpdateDownloadButton() {
     }
 
     if (!totalSwitchDivider) {
-        console.warn('[小白X] 未找到总开关标题元素');
         setTimeout(() => addUpdateDownloadButton(), 1000);
         return;
     }
 
     if (document.querySelector('#littlewhitebox-update-extension')) {
-        console.log('[小白X] 下载按钮已存在');
         return;
     }
 
@@ -194,7 +186,6 @@ function addUpdateDownloadButton() {
     }
 
     totalSwitchDivider.appendChild(updateButton);
-    console.log('[小白X] 已添加下载按钮到总开关标题旁边');
 
     try {
         if (window.setupUpdateButtonInSettings) {
@@ -208,30 +199,24 @@ function addUpdateDownloadButton() {
 function removeAllUpdateNotices() {
     const textNotice = document.querySelector('.littlewhitebox-update-text');
     const downloadButton = document.querySelector('#littlewhitebox-update-extension');
-    
+
     if (textNotice) textNotice.remove();
     if (downloadButton) downloadButton.remove();
-    
-    console.log('[小白X] 已移除所有更新提示');
 }
 
 async function performExtensionUpdateCheck() {
     if (updateCheckPerformed) {
-        console.log('[小白X] 更新检查已执行过，跳过');
         return;
     }
 
     updateCheckPerformed = true;
 
     try {
-        console.log('[小白X] 开始检查扩展更新...');
         const versionData = await checkLittleWhiteBoxUpdate();
 
         if (versionData && versionData.isUpToDate === false) {
-            console.log('[小白X] 发现可用更新，准备更新UI');
             updateExtensionHeaderWithUpdateNotice();
         } else if (versionData && versionData.isUpToDate === true) {
-            console.log('[小白X] 扩展已是最新版本');
         } else {
             console.log('[小白X] 版本检查返回空结果');
         }
@@ -569,65 +554,72 @@ function toggleSettingsControls(enabled) {
     }
 }
 
-function saveCurrentSettings() {
-    savedSettings = {
-        sandboxMode: settings.sandboxMode,
-        memoryEnabled: settings.memoryEnabled,
-        memoryInjectEnabled: settings.memoryInjectEnabled,
-        memoryInjectDepth: settings.memoryInjectDepth,
-        recordedEnabled: extension_settings[EXT_ID].recorded?.enabled,
-        previewEnabled: extension_settings[EXT_ID].preview?.enabled,
-        scriptAssistantEnabled: extension_settings[EXT_ID].scriptAssistant?.enabled,
-        scheduledTasksEnabled: extension_settings[EXT_ID].tasks?.enabled,
-        templateEnabled: extension_settings[EXT_ID].templateEditor?.enabled,
-        characterUpdaterEnabled: extension_settings[EXT_ID].characterUpdater?.enabled
-    };
-}
+function setDefaultSettings() {
+    settings.sandboxMode = false;
+    settings.memoryEnabled = false;
+    settings.memoryInjectEnabled = false;
+    settings.memoryInjectDepth = 5;
 
-function restoreSettings() {
-    if (savedSettings.sandboxMode !== undefined) $("#xiaobaix_sandbox").prop("checked", savedSettings.sandboxMode);
-    if (savedSettings.memoryEnabled !== undefined) $("#xiaobaix_memory_enabled").prop("checked", savedSettings.memoryEnabled);
-    if (savedSettings.memoryInjectEnabled !== undefined) $("#xiaobaix_memory_inject").prop("checked", savedSettings.memoryInjectEnabled);
-    if (savedSettings.memoryInjectDepth !== undefined) $("#xiaobaix_memory_depth").val(savedSettings.memoryInjectDepth);
-
-    const moduleSettings = [
-        { key: 'recordedEnabled', module: 'recorded', control: 'xiaobaix_recorded_enabled' },
-        { key: 'previewEnabled', module: 'preview', control: 'xiaobaix_preview_enabled' },
-        { key: 'scriptAssistantEnabled', module: 'scriptAssistant', control: 'xiaobaix_script_assistant' },
-        { key: 'scheduledTasksEnabled', module: 'tasks', control: 'scheduled_tasks_enabled' },
-        { key: 'templateEnabled', module: 'templateEditor', control: 'xiaobaix_template_enabled' },
-        { key: 'characterUpdaterEnabled', module: 'characterUpdater', control: 'character_updater_enabled' }
+    const defaultModules = [
+        { module: 'templateEditor', control: 'xiaobaix_template_enabled', enabled: true },
+        { module: 'tasks', control: 'scheduled_tasks_enabled', enabled: true },
+        { module: 'recorded', control: 'xiaobaix_recorded_enabled', enabled: true },
+        { module: 'characterUpdater', control: 'character_updater_enabled', enabled: true },
+        { module: 'preview', control: 'xiaobaix_preview_enabled', enabled: false },
+        { module: 'scriptAssistant', control: 'xiaobaix_script_assistant', enabled: false }
     ];
 
-    moduleSettings.forEach(({ key, module, control }) => {
-        if (savedSettings[key] !== undefined) {
-            if (!extension_settings[EXT_ID][module]) extension_settings[EXT_ID][module] = {};
-            extension_settings[EXT_ID][module].enabled = savedSettings[key];
-            $(`#${control}`).prop("checked", savedSettings[key]);
-        }
+    defaultModules.forEach(({ module, control, enabled }) => {
+        if (!extension_settings[EXT_ID][module]) extension_settings[EXT_ID][module] = {};
+        extension_settings[EXT_ID][module].enabled = enabled;
+        $(`#${control}`).prop("checked", enabled);
     });
+
+    $("#xiaobaix_sandbox").prop("checked", settings.sandboxMode);
+    $("#xiaobaix_memory_enabled").prop("checked", settings.memoryEnabled);
+    $("#xiaobaix_memory_inject").prop("checked", settings.memoryInjectEnabled);
+    $("#xiaobaix_memory_depth").val(settings.memoryInjectDepth);
 }
 
 function toggleAllFeatures(enabled) {
     if (enabled) {
-        restoreSettings();
+        setDefaultSettings();
+        settings.memoryEnabled = true;
+        $("#xiaobaix_memory_enabled").prop("checked", true);
+        statsTracker.init(EXT_ID, MODULE_NAME, settings, executeSlashCommand);
         toggleSettingsControls(true);
         saveSettingsDebounced();
         setTimeout(() => processExistingMessages(), 100);
         setupEventListeners();
 
-        if (settings.memoryEnabled && moduleInstances.statsTracker?.updateMemoryPrompt) 
-            setTimeout(() => moduleInstances.statsTracker.updateMemoryPrompt(), 200);
-        if (extension_settings[EXT_ID].scriptAssistant?.enabled && window.injectScriptDocs) 
-            setTimeout(() => window.injectScriptDocs(), 300);
-        if (extension_settings[EXT_ID].preview?.enabled) 
-            setTimeout(() => { document.querySelectorAll('#message_preview_btn').forEach(btn => btn.style.display = ''); }, 400);
-        if (extension_settings[EXT_ID].recorded?.enabled) 
-            setTimeout(() => addHistoryButtonsDebounced(), 500);
+        const moduleInits = [
+            { condition: extension_settings[EXT_ID].tasks?.enabled, init: initTasks },
+            { condition: extension_settings[EXT_ID].scriptAssistant?.enabled, init: initScriptAssistant },
+            { condition: extension_settings[EXT_ID].immersive?.enabled, init: initImmersiveMode },
+            { condition: extension_settings[EXT_ID].templateEditor?.enabled, init: initTemplateEditor },
+            { condition: extension_settings[EXT_ID].wallhaven?.enabled, init: initWallhavenBackground },
+            { condition: extension_settings[EXT_ID].characterUpdater?.enabled, init: initCharacterUpdater }
+        ];
+
+        moduleInits.forEach(({ condition, init }) => {
+            if (condition) init();
+        });
+
+        if (extension_settings[EXT_ID].preview?.enabled || extension_settings[EXT_ID].recorded?.enabled) {
+            setTimeout(initMessagePreview, 200);
+        }
+
+        if (settings.memoryEnabled && moduleInstances.statsTracker?.updateMemoryPrompt)
+            setTimeout(() => moduleInstances.statsTracker.updateMemoryPrompt(), 300);
+        if (extension_settings[EXT_ID].scriptAssistant?.enabled && window.injectScriptDocs)
+            setTimeout(() => window.injectScriptDocs(), 400);
+        if (extension_settings[EXT_ID].preview?.enabled)
+            setTimeout(() => { document.querySelectorAll('#message_preview_btn').forEach(btn => btn.style.display = ''); }, 500);
+        if (extension_settings[EXT_ID].recorded?.enabled)
+            setTimeout(() => addHistoryButtonsDebounced(), 600);
 
         document.dispatchEvent(new CustomEvent('xiaobaixEnabledChanged', { detail: { enabled: true } }));
     } else {
-        saveCurrentSettings();
         cleanupAllResources();
 
         if (window.messagePreviewCleanup) try { window.messagePreviewCleanup(); } catch (e) { }
@@ -774,7 +766,7 @@ async function setupSettings() {
                 }
                 extension_settings[EXT_ID][key] = settings[key];
                 saveSettingsDebounced();
-                
+
                 if (moduleCleanupFunctions.has(key)) {
                     moduleCleanupFunctions.get(key)();
                     moduleCleanupFunctions.delete(key);

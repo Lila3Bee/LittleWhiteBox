@@ -63,6 +63,7 @@ function bindSettingsEvents() {
         if (checkbox && !eventsBound) {
             const settings = getImmersiveSettings();
             checkbox.checked = settings.enabled;
+            checkbox.addEventListener('change', () => setImmersiveMode(checkbox.checked));
             eventsBound = true;
         }
     }, 500);
@@ -112,20 +113,17 @@ function getImmersiveSettings() {
     return extension_settings[EXT_ID].immersive;
 }
 
-function toggleImmersiveMode() {
-    const globalEnabled = window.isXiaobaixEnabled !== undefined ? window.isXiaobaixEnabled : true;
-    if (!globalEnabled) return;
-
+function setImmersiveMode(enabled) {
     const settings = getImmersiveSettings();
-    settings.enabled = !settings.enabled;
-    isImmersiveModeActive = settings.enabled;
+    settings.enabled = enabled;
+    isImmersiveModeActive = enabled;
 
     const checkbox = document.getElementById('xiaobaix_immersive_enabled');
     if (checkbox) {
-        checkbox.checked = settings.enabled;
+        checkbox.checked = enabled;
     }
 
-    if (isImmersiveModeActive) {
+    if (enabled) {
         enableImmersiveMode();
     } else {
         disableImmersiveMode();
@@ -133,6 +131,14 @@ function toggleImmersiveMode() {
     }
 
     saveSettingsDebounced();
+}
+
+function toggleImmersiveMode() {
+    const globalEnabled = window.isXiaobaixEnabled !== undefined ? window.isXiaobaixEnabled : true;
+    if (!globalEnabled) return;
+
+    const settings = getImmersiveSettings();
+    setImmersiveMode(!settings.enabled);
 }
 
 function enableImmersiveMode() {
@@ -152,6 +158,7 @@ function disableImmersiveMode() {
     $('#chat .mes').show();
     hideNavigationButtons();
     stopChatObserver();
+    $('.mesAvatarWrapper, .timestamp, .swipe_left, .swipeRightBlock').show();
 }
 
 function startChatObserver() {

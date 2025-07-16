@@ -87,7 +87,7 @@ const utils = {
 const characterManager = {
     getCharacter: id => id != null ? characters[id] || null : null,
     getExtensionData: id => characterManager.getCharacter(id)?.data?.extensions?.[MODULE_NAME] || null,
-    
+
     saveExtensionData: async (id, data) => {
         try {
             await writeExtensionField(id, MODULE_NAME, data);
@@ -248,33 +248,30 @@ const dataCache = {
 
 const longPressManager = {
     start: (element, onLongPress, onShortPress) => {
-        let isPressed = false, timer = null, startTime;
+        let longPressTimer = null;
 
-        const handleStart = () => {
-            isPressed = true;
-            startTime = Date.now();
-            timer = setTimeout(() => {
-                if (isPressed) {
-                    isPressed = false;
-                    onLongPress();
-                }
+        element.on('mousedown touchstart', () => {
+            longPressTimer = setTimeout(() => {
+                longPressTimer = null;
+                onLongPress();
             }, 3000);
-        };
+        });
 
-        const handleEnd = () => {
-            if (timer) {
-                clearTimeout(timer);
-                timer = null;
+        element.on('mouseup touchend mouseleave', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
             }
-            if (isPressed) {
-                const pressDuration = Date.now() - startTime;
-                isPressed = false;
-                if (pressDuration < 3000) onShortPress();
-            }
-        };
+        });
 
-        element.on('mousedown touchstart', handleStart);
-        element.on('mouseup mouseleave touchend touchcancel', handleEnd);
+        element.on('click', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                return;
+            }
+            onShortPress();
+        });
     }
 };
 
@@ -306,7 +303,7 @@ const menuManager = {
 
     getFormData: type => ({
         password: $(`#${type}-password`).val().trim(),
-        updateNote: $(`#${type}-update-note`).val().trim() || 
+        updateNote: $(`#${type}-update-note`).val().trim() ||
             (type === 'bind' ? '初始版本' : type === 'rebind' ? '重新绑定' : '版本更新'),
         pngUrl: $(`#${type}-png-url`).val().trim()
     }),
@@ -349,7 +346,7 @@ const menuManager = {
                     await characterManager.saveExtensionData(this_chid, {});
                     return businessLogic.bindCharacter(this_chid, formData);
                 },
-                'update': () => isSilent ? 
+                'update': () => isSilent ?
                     businessLogic.silentUpdateCharacter(this_chid, formData) :
                     businessLogic.updateCharacter(this_chid, formData)
             };
@@ -513,7 +510,6 @@ const uiManager = {
 
             const cloudData = dataCache.getCloudData(this_chid);
             if (!cloudData) {
-                console.log('[小白X] 缓存已过期或不存在，使用本地数据');
                 return;
             }
 
@@ -599,45 +595,130 @@ const popupManager = {
     formatSimpleDate: timestamp => timestamp ? new Date(timestamp).toLocaleDateString() : 'Unknown',
 
     showUpdatePopup: async updateInfo => {
+        // 只显示角色卡 data.character_book.name
+        let charBookName = null;
+        if (updateInfo?.characterId != null && typeof characters !== 'undefined') {
+            const char = characters[updateInfo.characterId];
+            charBookName = char?.data?.character_book?.name || null;
+        }
         const hasUpdate = updateInfo?.latestTimestamp && updateInfo.latestTimestamp !== updateInfo.currentTimestamp;
         const sanitizedAnnouncementText = utils.sanitizeContent(updateInfo?.updateNote || 'No announcements available');
         const linkAddress = updateInfo?.linkAddress || '';
         const isValidUrl = linkAddress && utils.validateUrl(linkAddress);
         const sanitizedLinkAddress = isValidUrl ? utils.sanitizeContent(linkAddress) : '';
 
-        const popupContent = `
-            <div class="character-update-popup">
-                <h3>${utils.sanitizeContent(updateInfo?.characterName || 'Unknown')} 更新信息</h3>
-                <div class="update-status">
-                    <div class="status-message ${hasUpdate ? 'status-update' : 'status-success'}">
-                        <i class="fa-solid ${hasUpdate ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i>
-                        ${hasUpdate ? '有可用更新' : '你的角色卡已是最新版本'}
-                    </div>
-                </div>
-                <div class="update-description">
-                    <strong>${hasUpdate ? '最新更新公告:' : '上次更新公告:'}</strong>
-                    <div class="announcement-content" style="user-select: none; pointer-events: none;">${sanitizedAnnouncementText}</div>
-                </div>
-                <div class="update-description">
-                    <strong>${hasUpdate ? '最新更新地址:' : '更新地址:'}</strong>
-                    <div class="link-content" style="user-select: none; pointer-events: none;">${sanitizedLinkAddress || (linkAddress ? '该链接地址非dc或rentry来源, 不予显示' : '无链接地址')}</div>
-                </div>
-                <div class="update-timestamps">
-                    <div><strong>上次更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.currentTimestamp)}</div>
-                    <div><strong>最新更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.latestTimestamp)}</div>
-                </div>
-                ${isValidUrl ? `
-                    <div class="popup-actions">
-                        <button class="menu_button" onclick="window.open('${linkAddress}', '_blank', 'noopener,noreferrer')">
-                            <i class="fa-solid fa-external-link-alt"></i>
-                            一键打开更新地址
-                        </button>
-                    </div>
-                ` : ''}
-            </div>
-        `;
+        // 用jQuery对象构造弹窗内容
+        const $popup = $('<div class="character-update-popup"></div>');
+        $popup.append(`<h3>${utils.sanitizeContent(updateInfo?.characterName || 'Unknown')} 更新信息</h3>`);
+        $popup.append(`
+            <div class="update-description">
+                <strong style="color: #666; text-align: left; display: block;">${hasUpdate ? '最新更新公告:' : '上次更新公告:'}</strong>
+                <div class="announcement-content" style="word-break: break-all; word-wrap: break-word; user-select: none; pointer-events: none; text-align: left;">${sanitizedAnnouncementText}</div>
+            </div>`);
+        $popup.append(`
+            <div class="update-description">
+                <strong style="color: #666; text-align: left; display: block;">${hasUpdate ? '最新更新地址:' : '更新地址:'}</strong>
+                <div class="link-content" style="word-break: break-all; word-wrap: break-word; text-align: left;">${sanitizedLinkAddress || (linkAddress ? '该链接地址非dc或rentry来源, 不予显示' : '无链接地址')}</div>
+            </div>`);
 
-        await callGenericPopup(popupContent, POPUP_TYPE.DISPLAY, '');
+        const $lorebookInfo = $(`
+            <div class="lorebook-info">
+                <strong style="color: #666; text-align: left; display: block;">角色卡绑定的世界书信息</strong>
+                <div style="margin: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between;">
+                    <span id="xiaobaix-character-book">${charBookName ? utils.sanitizeContent(charBookName) : '无'}</span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="xiaobaix_lorebook_info_delete" style="bottom: -3px;">
+                        <label for="xiaobaix_lorebook_info_delete" style="margin-right: 10px;">清除世界书</label>
+                    </div>
+                </div>
+            </div>
+
+
+            <hr class="sysHR" style="margin-top: 15px;">
+        `);
+
+        $popup.append($lorebookInfo);
+
+
+        if (isValidUrl) {
+            $popup.append(`
+<div class="update-container" style="display: flex; align-items: center; gap: 15px;">
+    <div class="update-status" style="flex: 1;">
+        <div style="margin-top: 20px; "class="status-message ${hasUpdate ? 'status-update' : 'status-success'}">
+            <i class="fa-solid ${hasUpdate ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i>
+            ${hasUpdate ? '有可用更新' : '已是最新版本'}
+        </div>
+    </div>
+    <button class="menu_button" onclick="window.open('${linkAddress}', '_blank', 'noopener,noreferrer')" style="margin-top: 10px;">
+        <i class="fa-solid fa-external-link-alt"></i>
+        更新地址
+    </button>
+</div>
+
+
+            <hr class="sysHR" style="margin-bottom: 15px;">
+            `);
+        $popup.append(`
+            <div class="update-timestamps" style="color: #666;">
+                <div><strong style="color: #666;">上次更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.currentTimestamp)}</div>
+                <div><strong style="color: #666;">最新更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.latestTimestamp)}</div>
+            </div>
+`);
+
+        }
+        // 按钮区
+        const $buttons = $(
+            '<div class="xiaobaix-confirm-buttons">' +
+            '  <button class="xiaobaix-confirm-yes" style="background-color: var(--crimson70a);">确认</button>' +
+            '  <button class="xiaobaix-confirm-no">取消</button>' +
+            '</div>'
+        );
+        $popup.append($buttons);
+
+
+        // 弹窗插入body
+        const $modal = $('<div class="xiaobaix-confirm-modal"></div>').append(
+            $('<div class="xiaobaix-confirm-content"></div>').append($popup)
+        );
+        $('body').append($modal);
+
+        // 事件绑定
+        $buttons.find('.xiaobaix-confirm-yes').on('click', function () {
+            const checked = $lorebookInfo.find('#xiaobaix_lorebook_info_delete').prop('checked');
+            if (checked) {
+                // 只保留模拟select和按钮点击的方案
+                const $select = $('#world_editor_select');
+                const $deleteBtn = $('#world_popup_delete');
+                if ($select.length && $deleteBtn.length) {
+                    const $option = $select.find('option').filter(function () {
+                        return $(this).text().trim() === (charBookName ? charBookName.trim() : '');
+                    });
+                    if ($option.length) {
+                        $select.val($option.val()).trigger('change');
+                        setTimeout(() => {
+                            $deleteBtn.trigger('click');
+                        }, 200);
+                    } else {
+                        utils.showToast('未找到同名世界书，请检查世界书列表', 'error');
+                    }
+                }
+                $modal.remove();
+            } else {
+                utils.showToast('请勾选删除世界书复选框', 'warning');
+            }
+        });
+        $buttons.find('.xiaobaix-confirm-no').on('click', function () {
+            $modal.remove();
+        });
+        $modal.on('click', function (e) {
+            if (e.target === this) $modal.remove();
+        });
+        $(document).on('keydown.xiaobaixconfirm', function (e) {
+            if (e.key === 'Escape') {
+                $modal.remove();
+                $(document).off('keydown.xiaobaixconfirm');
+            }
+        });
     },
 
     showGeneralInfoPopup: async characterName => {
@@ -645,10 +726,10 @@ const popupManager = {
         let cloudData = dataCache.getCloudData(this_chid);
 
         if (!cloudData) {
-            console.log('[小白X] 没有缓存数据，显示本地信息');
         }
 
         await popupManager.showUpdatePopup({
+            characterId: this_chid,
             characterName,
             currentTimestamp: characterData?.timestamp || new Date().toISOString(),
             latestTimestamp: cloudData?.timestamp || characterData?.timestamp || new Date().toISOString(),
@@ -663,11 +744,8 @@ const startupManager = {
         try {
             const boundCharacters = characterManager.getAllBound();
             if (boundCharacters.length === 0) {
-                console.log('[小白X] 没有绑定的角色，跳过云端检查');
                 return;
             }
-
-            console.log(`[小白X] 强制云端更新检查，共 ${boundCharacters.length} 个绑定角色`);
 
             const charactersToCheck = [];
             const characterMap = new Map();
@@ -686,7 +764,6 @@ const startupManager = {
             });
 
             if (charactersToCheck.length === 0) {
-                console.log('[小白X] 没有有效的角色数据，跳过云端检查');
                 return;
             }
 
@@ -733,7 +810,7 @@ const startupManager = {
                     }
                 }
 
-                console.log(`[小白X] 云端检查完成，发现 ${updates.length} 个角色有更新，缓存已更新`);
+                console.log(`[小白X] 云端检查完成，发现 ${updates.length} 个角色有更新`);
             }
         } catch (error) {
             console.error('[小白X] 云端检查失败:', error);
@@ -792,7 +869,6 @@ async function initCharacterUpdater() {
 
     uiManager.updateDisplay();
     moduleState.isInitialized = true;
-    console.log('[小白X] 角色卡更新模块已初始化');
 }
 
 function cleanup() {
@@ -804,7 +880,6 @@ function cleanup() {
     $('.character-menu-overlay, #character-updater-edit-button, .character-update-notification').remove();
     dataCache.clear();
     moduleState.isInitialized = false;
-    console.log('[小白X] 角色卡更新模块已清理');
 }
 
 async function addMenusHTML() {
@@ -828,7 +903,7 @@ function bindEvents() {
         $(document.body).on('click', `#${type}-menu-close, #${type}-cancel`, () => menuManager.closeMenu(type));
     });
 
-    $(document.body).on('click', '.character-menu-overlay', function(e) {
+    $(document.body).on('click', '.character-menu-overlay', function (e) {
         if (e.target === this) $(this).hide();
     });
 
@@ -839,7 +914,6 @@ function bindEvents() {
 
     const eventHandlers = {
         [event_types.APP_READY]: async () => {
-            console.log('[小白X] 应用就绪，开始强制云端更新检查');
             await startupManager.performStartupCheck();
         },
         [event_types.CHAT_CHANGED]: async () => {
