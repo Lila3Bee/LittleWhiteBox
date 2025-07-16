@@ -1304,6 +1304,15 @@ body.immersive-mode .mes {
 }
 
 /* ==================== 角色卡自动更新样式 (Character Updater) ==================== */
+.character-update-popup .update-description {
+    margin-bottom: 15px;
+}
+
+.character-update-popup .update-description strong {
+    margin-bottom: 5px;
+    color: var(--SmartThemeBodyColor);
+}
+
 .littlewhitebox .current-character-name {
     font-weight: 500;
     color: var(--SmartThemeBodyColor);
