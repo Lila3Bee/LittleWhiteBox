@@ -57,25 +57,37 @@ window.testRemoveUpdateUI = () => {
 
 // ============ 更新功能模块 ============
 async function checkLittleWhiteBoxUpdate() {
+    console.log('[小白X] 开始检查更新...');
     try {
         const localRes = await fetch(`${extensionFolderPath}/manifest.json`);
+        if (!localRes.ok) {
+            console.error('[小白X] 无法获取本地manifest:', localRes.status);
+            return null;
+        }
         const localManifest = await localRes.json();
         const localVersion = localManifest.version;
-
+        console.log('[小白X] 本地版本:', localVersion);
         const remoteRes = await fetch('https://raw.githubusercontent.com/Lila3Bee/LittleWhiteBox/main/manifest.json');
+        if (!remoteRes.ok) {
+            console.error('[小白X] 无法获取远程manifest:', remoteRes.status);
+            return null;
+        }
         const remoteManifest = await remoteRes.json();
         const remoteVersion = remoteManifest.version;
-
+        console.log('[小白X] 远程版本:', remoteVersion);
         if (localVersion !== remoteVersion) {
             return { isUpToDate: false, localVersion, remoteVersion };
         } else {
+            console.log('[小白X] 版本已是最新');
             return { isUpToDate: true, localVersion, remoteVersion };
         }
     } catch (e) {
-        console.warn('[小白X] 检查更新败:', e);
+        console.error('[小白X] 检查更新异常:', e);
         return null;
     }
 }
+
+
 
 async function updateLittleWhiteBoxExtension() {
     try {
@@ -202,15 +214,13 @@ function removeAllUpdateNotices() {
 }
 
 async function performExtensionUpdateCheck() {
+
     if (updateCheckPerformed) {
         return;
     }
-
     updateCheckPerformed = true;
-
     try {
         const versionData = await checkLittleWhiteBoxUpdate();
-
         if (versionData && versionData.isUpToDate === false) {
             updateExtensionHeaderWithUpdateNotice();
         } else if (versionData && versionData.isUpToDate === true) {
@@ -218,7 +228,7 @@ async function performExtensionUpdateCheck() {
             console.log('[小白X] 版本检查返回空结果');
         }
     } catch (error) {
-        console.warn('[小白X] 更新检查过程中出现错误:', error);
+        console.error('[小白X] 更新检查过程中出现错误:', error);
     }
 }
 
