@@ -649,10 +649,12 @@ const popupManager = {
             ${hasUpdate ? '有可用更新' : '已是最新版本'}
         </div>
     </div>
-    <button class="menu_button" onclick="window.open('${linkAddress}', '_blank', 'noopener,noreferrer')" style="margin-top: 10px;">
-        <i class="fa-solid fa-external-link-alt"></i>
-        更新地址
-    </button>
+    ${hasUpdate ? `
+        <button class="menu_button" onclick="window.open('${linkAddress}', '_blank', 'noopener,noreferrer')" style="margin-top: 10px;">
+            <i class="fa-solid fa-external-link-alt"></i>
+            更新地址
+        </button>
+                ` : ''}
 </div>
 
 
