@@ -58,24 +58,21 @@ window.testRemoveUpdateUI = () => {
 // ============ 更新功能模块 ============
 async function checkLittleWhiteBoxUpdate() {
     try {
-        const requestBody = { extensionName: 'LittleWhiteBox', global: true };
+        const localRes = await fetch(`${extensionFolderPath}/manifest.json`);
+        const localManifest = await localRes.json();
+        const localVersion = localManifest.version;
 
-        const response = await fetch('/api/extensions/version', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-        });
+        const remoteRes = await fetch('https://raw.githubusercontent.com/Lila3Bee/LittleWhiteBox/main/manifest.json');
+        const remoteManifest = await remoteRes.json();
+        const remoteVersion = remoteManifest.version;
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.warn('[小白X] 版本检查失败:', response.statusText, '详细错误:', errorText);
-            return null;
+        if (localVersion !== remoteVersion) {
+            return { isUpToDate: false, localVersion, remoteVersion };
+        } else {
+            return { isUpToDate: true, localVersion, remoteVersion };
         }
-
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.warn('[小白X] 更新检查失败:', error);
+    } catch (e) {
+        console.warn('[小白X] 检查更新失败:', e);
         return null;
     }
 }
