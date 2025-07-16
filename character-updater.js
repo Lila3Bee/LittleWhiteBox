@@ -648,6 +648,7 @@ showUpdatePopup: async updateInfo => {
             </div>
             <hr class="sysHR" style="margin-bottom: 15px;">
         `);
+        
         $popup.append(`
             <div class="update-timestamps" style="color: #666;">
                 <div><strong style="color: #666;">上次更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.currentTimestamp)}</div>
