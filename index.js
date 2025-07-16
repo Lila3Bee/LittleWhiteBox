@@ -57,60 +57,45 @@ window.testRemoveUpdateUI = () => {
 
 // ============ 更新功能模块 ============
 async function checkLittleWhiteBoxUpdate() {
-    console.log('[小白X] 开始检查更新...');
     try {
         const timestamp = Date.now();
         
         const localRes = await fetch(`${extensionFolderPath}/manifest.json?t=${timestamp}`, {
             cache: 'no-cache'
         });
-        if (!localRes.ok) {
-            console.error('[小白X] 无法获取本地manifest:', localRes.status);
-            return null;
-        }
+        if (!localRes.ok) return null;
+        
         const localManifest = await localRes.json();
         const localVersion = localManifest.version;
-        console.log('[小白X] 本地版本:', localVersion);
         
-        // 使用 GitHub API 替代 raw 文件
         const remoteRes = await fetch(`https://api.github.com/repos/Lila3Bee/LittleWhiteBox/contents/manifest.json?t=${timestamp}`, {
             cache: 'no-cache'
         });
         
-        if (!remoteRes.ok) {
-            console.error('[小白X] 无法获取远程manifest:', remoteRes.status);
-            return null;
-        }
+        if (!remoteRes.ok) return null;
+        
         const remoteData = await remoteRes.json();
         const remoteManifest = JSON.parse(atob(remoteData.content));
         const remoteVersion = remoteManifest.version;
-        console.log('[小白X] 远程版本:', remoteVersion);
         
-        if (localVersion !== remoteVersion) {
-            return { isUpToDate: false, localVersion, remoteVersion };
-        } else {
-            console.log('[小白X] 版本已是最新');
-            return { isUpToDate: true, localVersion, remoteVersion };
-        }
+        return localVersion !== remoteVersion 
+            ? { isUpToDate: false, localVersion, remoteVersion }
+            : { isUpToDate: true, localVersion, remoteVersion };
     } catch (e) {
-        console.error('[小白X] 检查更新异常:', e);
         return null;
     }
 }
 
 async function updateLittleWhiteBoxExtension() {
     try {
-        const requestBody = { extensionName: 'LittleWhiteBox', global: true };
-
         const response = await fetch('/api/extensions/update', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify({ extensionName: 'LittleWhiteBox', global: true }),
         });
 
         if (!response.ok) {
             const text = await response.text();
-            console.error('[小白X] 更新失败:', response.status, response.statusText, text);
             toastr.error(text || response.statusText, '小白X更新失败', { timeOut: 5000 });
             return false;
         }
@@ -122,7 +107,6 @@ async function updateLittleWhiteBoxExtension() {
         toastr.success(message, title);
         return true;
     } catch (error) {
-        console.error('[小白X] 更新错误:', error);
         toastr.error('更新过程中发生错误', '小白X更新失败');
         return false;
     }
@@ -154,14 +138,11 @@ function addUpdateTextNotice() {
     }
 
     if (!headerElement) {
-        console.warn('[小白X] 未找到扩展标题元素');
         setTimeout(() => addUpdateTextNotice(), 1000);
         return;
     }
 
-    if (headerElement.querySelector('.littlewhitebox-update-text')) {
-        return;
-    }
+    if (headerElement.querySelector('.littlewhitebox-update-text')) return;
 
     const updateTextSmall = document.createElement('small');
     updateTextSmall.className = 'littlewhitebox-update-text';
@@ -185,9 +166,7 @@ function addUpdateDownloadButton() {
         return;
     }
 
-    if (document.querySelector('#littlewhitebox-update-extension')) {
-        return;
-    }
+    if (document.querySelector('#littlewhitebox-update-extension')) return;
 
     const updateButton = document.createElement('div');
     updateButton.id = 'littlewhitebox-update-extension';
@@ -199,9 +178,7 @@ function addUpdateDownloadButton() {
         totalSwitchDivider.style.display = 'flex';
         totalSwitchDivider.style.alignItems = 'center';
         totalSwitchDivider.style.justifyContent = 'flex-start';
-    } catch (e) {
-        console.warn('[小白X] 无法设置总开关样式:', e);
-    }
+    } catch (e) {}
 
     totalSwitchDivider.appendChild(updateButton);
 
@@ -209,9 +186,7 @@ function addUpdateDownloadButton() {
         if (window.setupUpdateButtonInSettings) {
             window.setupUpdateButtonInSettings();
         }
-    } catch (e) {
-        console.warn('[小白X] 无法调用设置中的更新按钮处理器:', e);
-    }
+    } catch (e) {}
 }
 
 function removeAllUpdateNotices() {
@@ -223,22 +198,15 @@ function removeAllUpdateNotices() {
 }
 
 async function performExtensionUpdateCheck() {
-
-    if (updateCheckPerformed) {
-        return;
-    }
+    if (updateCheckPerformed) return;
     updateCheckPerformed = true;
+    
     try {
         const versionData = await checkLittleWhiteBoxUpdate();
         if (versionData && versionData.isUpToDate === false) {
             updateExtensionHeaderWithUpdateNotice();
-        } else if (versionData && versionData.isUpToDate === true) {
-        } else {
-            console.log('[小白X] 版本检查返回空结果');
         }
-    } catch (error) {
-        console.error('[小白X] 更新检查过程中出现错误:', error);
-    }
+    } catch (error) {}
 }
 
 // ============ 资源管理模块 ============
