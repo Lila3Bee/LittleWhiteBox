@@ -1,920 +1,2112 @@
-import { extension_settings, getContext, writeExtensionField } from "../../../extensions.js";
-import { saveSettingsDebounced, eventSource, event_types, characters, this_chid } from "../../../../script.js";
-import { callGenericPopup, POPUP_TYPE } from "../../../popup.js";
-
-const EXT_ID = "LittleWhiteBox";
-const MODULE_NAME = "characterUpdater";
-const extensionFolderPath = `scripts/extensions/third-party/${EXT_ID}`;
-
-const SECURITY_CONFIG = {
-    AUTH_TOKEN: 'L15bEs6Nut9b4skgabYC',
-    AUTH_HEADER_KEY: 'GTpzLYc21yopWLKhjjEQ',
-    PASSWORD_SALT: 'kXUAjsi8wMa1AM8NJ9uA',
-    TRUSTED_DOMAINS: ['rentry.org', 'discord.com', 'discordapp.net', 'discordapp.com']
-};
-
-const moduleState = {
-    isInitialized: false,
-    eventHandlers: {}
-};
-
-const defaultSettings = {
-    enabled: true,
-    showNotifications: true
-};
-
-const utils = {
-    getSettings: () => {
-        const parentSettings = extension_settings[EXT_ID] || {};
-        const moduleSettings = parentSettings.characterUpdater || {};
-        const settings = { ...defaultSettings, ...moduleSettings };
-        settings.serverUrl = parentSettings.characterUpdater?.serverUrl || "https://db.littlewhitebox.qzz.io";
-        return settings;
-    },
-
-    generateUUID: () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c == 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    }),
-
-    showToast: (message, type = 'info') => {
-        if (utils.getSettings().showNotifications) {
-            toastr[type](message, '角色卡更新');
-        }
-    },
-
-    encryptPassword: (password) => {
-        const key = SECURITY_CONFIG.PASSWORD_SALT;
-        let result = '';
-        for (let i = 0; i < password.length; i++) {
-            result += String.fromCharCode(password.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        }
-        return btoa(result);
-    },
-
-    validateUrl: (url) => {
-        if (!url || typeof url !== 'string') return false;
-        try {
-            const hostname = new URL(url).hostname.toLowerCase();
-            return SECURITY_CONFIG.TRUSTED_DOMAINS.some(domain =>
-                hostname === domain || hostname.endsWith('.' + domain)
-            );
-        } catch { return false; }
-    },
-
-    sanitizeContent: (content) => {
-        if (!content || typeof content !== 'string') return '';
-        const allowedTags = ['br', 'b', 'strong', 'i', 'em', 'u', 'p', 'div', 'span'];
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = content;
-
-        const cleanNode = (node) => {
-            if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                const tagName = node.tagName.toLowerCase();
-                if (!allowedTags.includes(tagName)) return node.textContent;
-                let result = `<${tagName}>`;
-                for (let child of node.childNodes) result += cleanNode(child);
-                return result + `</${tagName}>`;
-            }
-            return '';
-        };
-
-        return [...tempDiv.childNodes].map(cleanNode).join('');
-    }
-};
-
-const characterManager = {
-    getCharacter: id => id != null ? characters[id] || null : null,
-    getExtensionData: id => characterManager.getCharacter(id)?.data?.extensions?.[MODULE_NAME] || null,
-
-    saveExtensionData: async (id, data) => {
-        try {
-            await writeExtensionField(id, MODULE_NAME, data);
-            return true;
-        } catch (error) {
-            console.error('保存失败:', error);
-            return false;
-        }
-    },
-
-    isBound: id => {
-        const data = characterManager.getExtensionData(id);
-        return !!(data?.uniqueValue && data?.nameGroup);
-    },
-
-    getAllBound: () => characters.reduce((acc, char, index) => {
-        if (char && characterManager.isBound(index)) acc.push(index);
-        return acc;
-    }, [])
-};
-
-const serverAPI = {
-    request: async (endpoint, method = 'GET', data = null, useFormData = false) => {
-        const { serverUrl } = utils.getSettings();
-        if (!serverUrl) throw new Error('服务器地址未配置');
-
-        const authParams = new URLSearchParams({
-            auth: SECURITY_CONFIG.AUTH_TOKEN,
-            key: SECURITY_CONFIG.AUTH_HEADER_KEY,
-            ts: Date.now().toString()
-        });
-
-        let requestOptions = { method };
-
-        if (data) {
-            if (useFormData) {
-                const formData = new URLSearchParams();
-                formData.append('data', JSON.stringify(data));
-                requestOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-                requestOptions.body = formData;
-            } else {
-                requestOptions.headers = { 'Content-Type': 'application/json' };
-                requestOptions.body = JSON.stringify(data);
-            }
-        }
-
-        const response = await fetch(`${serverUrl.replace(/\/$/, '')}${endpoint}?${authParams}`, requestOptions);
-
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            const errorMessage = error.error || `服务器错误: ${response.status}`;
-            const errorObj = new Error(errorMessage);
-            errorObj.status = response.status;
-            errorObj.isPasswordError = response.status === 401 && errorMessage.includes('密码');
-            throw errorObj;
-        }
-
-        return await response.json();
-    },
-
-    create: data => serverAPI.request('/create', 'POST', data, true),
-    update: data => serverAPI.request('/update', 'POST', data, true),
-    batchData: async (characters) => serverAPI.request('/batch/data', 'POST', {
-        characters: characters.map((char, index) => ({
-            name: char.nameGroup || char.name,
-            uniqueValue: char.uniqueValue,
-            clientId: index
-        }))
-    }, true)
-};
-
-const cooldownManager = {
-    isActive: false,
-    timeLeft: 0,
-    timer: null,
-
-    start: (duration = 30) => {
-        cooldownManager.isActive = true;
-        cooldownManager.timeLeft = duration;
-        cooldownManager.timer = setInterval(() => {
-            if (--cooldownManager.timeLeft <= 0) cooldownManager.stop();
-        }, 1000);
-    },
-
-    stop: () => {
-        clearInterval(cooldownManager.timer);
-        Object.assign(cooldownManager, { isActive: false, timeLeft: 0, timer: null });
-    },
-
-    check: () => {
-        if (cooldownManager.isActive) {
-            utils.showToast(`操作冷却中，请等待 ${cooldownManager.timeLeft} 秒`, 'warning');
-            return false;
-        }
-        return true;
-    }
-};
-
-const dataCache = {
-    CACHE_KEY: 'character_updater_cache',
-    CACHE_EXPIRY: 24 * 60 * 60 * 1000,
-
-    getCache: () => {
-        try {
-            const cached = localStorage.getItem(dataCache.CACHE_KEY);
-            return cached ? JSON.parse(cached) : {};
-        } catch { return {}; }
-    },
-
-    set: (key, data) => {
-        try {
-            const cache = dataCache.getCache();
-            cache[key] = { ...data, cachedAt: Date.now() };
-            localStorage.setItem(dataCache.CACHE_KEY, JSON.stringify(cache));
-        } catch (error) {
-            console.error('[小白X] 保存缓存失败:', error);
-        }
-    },
-
-    get: key => {
-        try {
-            const cache = dataCache.getCache();
-            const item = cache[key];
-            if (!item || Date.now() - item.cachedAt > dataCache.CACHE_EXPIRY) {
-                if (item) {
-                    delete cache[key];
-                    localStorage.setItem(dataCache.CACHE_KEY, JSON.stringify(cache));
-                }
-                return null;
-            }
-            return item;
-        } catch { return null; }
-    },
-
-    getCloudData: charId => dataCache.get(charId)?.serverData || null,
-
-    setBatch: (dataMap) => {
-        try {
-            const cache = dataCache.getCache();
-            const timestamp = Date.now();
-            dataMap.forEach((data, key) => {
-                cache[key] = { ...data, cachedAt: timestamp };
-            });
-            localStorage.setItem(dataCache.CACHE_KEY, JSON.stringify(cache));
-        } catch (error) {
-            console.error('[小白X] 批量保存缓存失败:', error);
-        }
-    },
-
-    clear: () => {
-        try {
-            localStorage.removeItem(dataCache.CACHE_KEY);
-        } catch (error) {
-            console.error('[小白X] 清除缓存失败:', error);
-        }
-    }
-};
-
-const longPressManager = {
-    start: (element, onLongPress, onShortPress) => {
-        let longPressTimer = null;
-
-        element.on('mousedown touchstart', () => {
-            longPressTimer = setTimeout(() => {
-                longPressTimer = null;
-                onLongPress();
-            }, 3000);
-        });
-
-        element.on('mouseup touchend mouseleave', () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        });
-
-        element.on('click', () => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-                return;
-            }
-            onShortPress();
-        });
-    }
-};
-
-const menuManager = {
-    showMenu: type => {
-        $('.character-menu-overlay').hide();
-        menuManager.updateUUIDDisplay(type);
-        $(`#${type}-character-menu`).show();
-    },
-
-    closeMenu: type => {
-        $(`#${type}-character-menu`).hide();
-        $(`#${type}-password, #${type}-update-note, #${type}-png-url`).val('');
-    },
-
-    updateUUIDDisplay: type => {
-        if (this_chid == null) return;
-        const data = characterManager.getExtensionData(this_chid);
-        const displays = {
-            'bind': () => $('#bind-uuid-display').text('将自动生成'),
-            'rebind': () => {
-                $('#rebind-current-uuid').text(data?.uniqueValue || '未绑定');
-                $('#rebind-new-uuid').text('将自动生成');
-            },
-            'update': () => $('#update-uuid-display').text(data?.uniqueValue || '未绑定')
-        };
-        displays[type]?.();
-    },
-
-    getFormData: type => ({
-        password: $(`#${type}-password`).val().trim(),
-        updateNote: $(`#${type}-update-note`).val().trim() ||
-            (type === 'bind' ? '初始版本' : type === 'rebind' ? '重新绑定' : '版本更新'),
-        pngUrl: $(`#${type}-png-url`).val().trim()
-    }),
-
-    validateForm: (type, data) => {
-        const validations = [
-            [!data.password || data.password.length < 4, '密码至少需要4个字符'],
-            [data.pngUrl && !utils.validateUrl(data.pngUrl), '链接地址只能使用受信任的域名(rentry,dc)'],
-            [data.updateNote.length > 300, '更新公告超过300字限制'],
-            [data.pngUrl.length > 300, '链接地址超过300字限制']
-        ];
-
-        for (const [condition, message] of validations) {
-            if (condition) {
-                utils.showToast(message, 'error');
-                return false;
-            }
-        }
-        return true;
-    },
-
-    handleConfirm: async (type, isSilent = false) => {
-        if (!cooldownManager.check() || this_chid == null) {
-            if (this_chid == null) utils.showToast('请先选择一个角色', 'error');
-            return;
-        }
-
-        const formData = menuManager.getFormData(type);
-        if (!menuManager.validateForm(type, formData)) return;
-
-        const $button = $(isSilent ? `#${type}-silent` : `#${type}-confirm`);
-        const originalText = $button.text();
-
-        try {
-            $button.prop('disabled', true).text(isSilent ? '静默更新中...' : '处理中...');
-
-            const actions = {
-                'bind': () => businessLogic.bindCharacter(this_chid, formData),
-                'rebind': async () => {
-                    await characterManager.saveExtensionData(this_chid, {});
-                    return businessLogic.bindCharacter(this_chid, formData);
-                },
-                'update': () => isSilent ?
-                    businessLogic.silentUpdateCharacter(this_chid, formData) :
-                    businessLogic.updateCharacter(this_chid, formData)
-            };
-
-            const result = await actions[type]();
-
-            if (result.success) {
-                const actionText = type === 'bind' ? '绑定' : type === 'rebind' ? '重新绑定' : (isSilent ? '静默更新' : '更新');
-                utils.showToast(`角色${actionText}成功！`, 'success');
-                cooldownManager.start(30);
-                menuManager.closeMenu(type);
-                setTimeout(() => uiManager.updateDisplay(), 500);
-            } else {
-                utils.showToast(`操作失败: ${result.error}`, 'error');
-            }
-        } catch (error) {
-            console.error(`${type}操作失败:`, error);
-            utils.showToast(error.isPasswordError ? '密码错误，请检查密码' : '操作失败，请检查网络连接', 'error');
-        } finally {
-            $button.prop('disabled', false).text(originalText);
-        }
-    }
-};
-
-const businessLogic = {
-    bindCharacter: async (id, formData) => {
-        const character = characterManager.getCharacter(id);
-        if (!character) return { success: false, error: '角色不存在' };
-
-        const uuid = utils.generateUUID();
-        const timestamp = new Date().toISOString();
-        let nameGroup = (character.name || "无名称角色卡").substring(0, 300);
-
-        try {
-            const result = await serverAPI.create({
-                name: nameGroup,
-                unique_value: uuid,
-                password: utils.encryptPassword(formData.password),
-                update_notice: formData.updateNote,
-                link_address: formData.pngUrl,
-                timestamp
-            });
-
-            if (!result.success) return { success: false, error: result.error };
-
-            await characterManager.saveExtensionData(id, {
-                nameGroup, uniqueValue: uuid, updateNote: formData.updateNote,
-                linkAddress: formData.pngUrl, timestamp, bindTime: Date.now()
-            });
-
-            return { success: true, nameGroup, uniqueValue: uuid };
-        } catch (error) {
-            console.error('绑定失败:', error);
-            return { success: false, error: error.isPasswordError ? '密码错误' : '网络连接失败' };
-        }
-    },
-
-    updateCharacter: async (id, formData) => {
-        const data = characterManager.getExtensionData(id);
-        if (!characterManager.isBound(id)) return { success: false, error: '角色未绑定' };
-
-        const timestamp = new Date().toISOString();
-        return businessLogic.performUpdate(id, data, formData, timestamp, false);
-    },
-
-    silentUpdateCharacter: async (id, formData) => {
-        const data = characterManager.getExtensionData(id);
-        if (!characterManager.isBound(id)) return { success: false, error: '角色未绑定' };
-
-        return businessLogic.performUpdate(id, data, formData, data.timestamp, true);
-    },
-
-    performUpdate: async (id, data, formData, timestamp, isSilent) => {
-        try {
-            const result = await serverAPI.update({
-                name: data.nameGroup,
-                unique_value: data.uniqueValue,
-                password: utils.encryptPassword(formData.password),
-                update_notice: formData.updateNote,
-                link_address: formData.pngUrl,
-                timestamp
-            });
-
-            if (!result.success) return { success: false, error: result.error };
-
-            await characterManager.saveExtensionData(id, {
-                ...data,
-                updateNote: formData.updateNote,
-                linkAddress: formData.pngUrl,
-                timestamp,
-                [isSilent ? 'lastSilentUpdateTime' : 'lastUpdateTime']: Date.now()
-            });
-
-            dataCache.set(id, {
-                serverData: { timestamp, update_notice: formData.updateNote, link_address: formData.pngUrl }
-            });
-
-            return { success: true, timestamp };
-        } catch (error) {
-            console.error('更新失败:', error);
-            return { success: false, error: error.isPasswordError ? '密码错误' : '网络连接失败' };
-        }
-    }
-};
-
-const uiManager = {
-    updateDisplay: () => {
-        const $name = $('#current-character-name');
-        const $status = $('#current-character-status');
-
-        if (this_chid == null) {
-            $name.text('未选择角色');
-            $status.removeClass().text('');
-            characterEditUI.updateButtonState(false);
-            return;
-        }
-
-        const character = characterManager.getCharacter(this_chid);
-        if (!character) return;
-
-        $name.text(character.name);
-        const isBound = characterManager.isBound(this_chid);
-        $status.removeClass().addClass(isBound ? 'bound' : 'unbound').text(isBound ? '已绑定' : '未绑定');
-
-        if (!isBound) {
-            characterEditUI.updateButtonState(false);
-            characterListUI.removeUpdateNotification(this_chid);
-        }
-    },
-
-    handleLongPress: () => {
-        if (this_chid == null) {
-            utils.showToast('请先选择一个角色', 'warning');
-            return;
-        }
-        menuManager.showMenu(characterManager.isBound(this_chid) ? 'rebind' : 'bind');
-    },
-
-    handleShortPress: () => {
-        if (this_chid == null) {
-            utils.showToast('请先选择一个角色', 'warning');
-            return;
-        }
-
-        if (characterManager.isBound(this_chid)) {
-            menuManager.showMenu('update');
-        } else {
-            utils.showToast('角色尚未绑定，请长按3秒进行绑定', 'info');
-        }
-    },
-
-    checkCurrentCharacterUpdate: async () => {
-        if (this_chid == null || !characterManager.isBound(this_chid)) {
-            characterEditUI.updateButtonState(false);
-            return;
-        }
-
-        try {
-            const data = characterManager.getExtensionData(this_chid);
-            if (!data?.uniqueValue || !data?.nameGroup) return;
-
-            const cloudData = dataCache.getCloudData(this_chid);
-            if (!cloudData) {
-                return;
-            }
-
-            const hasUpdate = cloudData.timestamp && cloudData.timestamp !== data.timestamp;
-            characterEditUI.updateButtonState(hasUpdate);
-
-            if (hasUpdate) {
-                const character = characterManager.getCharacter(this_chid);
-                const updateInfo = {
-                    characterId: this_chid,
-                    characterName: character?.name || '未知角色',
-                    currentTimestamp: data.timestamp,
-                    latestTimestamp: cloudData.timestamp,
-                    updateNote: cloudData.update_notice || '無更新說明',
-                    linkAddress: cloudData.link_address || '',
-                    serverData: cloudData
-                };
-                characterListUI.addUpdateNotification(this_chid, updateInfo);
-            } else {
-                characterListUI.removeUpdateNotification(this_chid);
-            }
-        } catch (error) {
-            console.error('[小白X] 检查角色更新状态失败:', error);
-            characterEditUI.updateButtonState(false);
-        }
-    },
-
-    restoreUpdateNotifications: async () => {
-        try {
-            const boundCharacters = characterManager.getAllBound();
-            for (const charId of boundCharacters) {
-                const data = characterManager.getExtensionData(charId);
-                const cloudData = dataCache.getCloudData(charId);
-                if (data && cloudData && cloudData.timestamp && cloudData.timestamp !== data.timestamp) {
-                    const character = characterManager.getCharacter(charId);
-                    const updateInfo = {
-                        characterId: charId,
-                        characterName: character?.name || '未知角色',
-                        currentTimestamp: data.timestamp,
-                        latestTimestamp: cloudData.timestamp,
-                        updateNote: cloudData.update_notice || '無更新說明',
-                        linkAddress: cloudData.link_address || '',
-                        serverData: cloudData
-                    };
-                    characterListUI.addUpdateNotification(charId, updateInfo);
-                }
-            }
-        } catch (error) {
-            console.error('恢复更新通知失败:', error);
-        }
-    }
-};
-
-const characterListUI = {
-    addUpdateNotification: (characterId, updateInfo) => {
-        const characterElement = $(`#CharID${characterId}`);
-        const nameBlock = characterElement.find('.character_name_block');
-        if (!nameBlock.length) return;
-
-        nameBlock.find('.character-update-notification').remove();
-
-        const updateNotification = $(`
-            <span class="character-update-notification" data-character-id="${characterId}">
-                <i class="fa-solid fa-circle-exclamation"></i>
-                <small>有可用更新</small>
-            </span>
-        `);
-
-        updateNotification.on('click', e => {
-            e.stopPropagation();
-            popupManager.showUpdatePopup(updateInfo);
-        });
-
-        nameBlock.append(updateNotification);
-    },
-
-    removeUpdateNotification: characterId => {
-        $(`#CharID${characterId}`).find('.character-update-notification').remove();
-    }
-};
-
-const popupManager = {
-    formatSimpleDate: timestamp => timestamp ? new Date(timestamp).toLocaleDateString() : 'Unknown',
-
-showUpdatePopup: async updateInfo => {
-    let charBookName = null;
-    if (updateInfo?.characterId != null && typeof characters !== 'undefined') {
-        const char = characters[updateInfo.characterId];
-        charBookName = char?.data?.character_book?.name || null;
-    }
-    const hasUpdate = updateInfo?.latestTimestamp && updateInfo.latestTimestamp !== updateInfo.currentTimestamp;
-    const sanitizedAnnouncementText = utils.sanitizeContent(updateInfo?.updateNote || 'No announcements available');
-    const linkAddress = updateInfo?.linkAddress || '';
-    const isValidUrl = linkAddress && utils.validateUrl(linkAddress);
-    const sanitizedLinkAddress = isValidUrl ? utils.sanitizeContent(linkAddress) : '';
-    const $popup = $('<div class="character-update-popup"></div>');
-        $popup.append(`<h3>${utils.sanitizeContent(updateInfo?.characterName || 'Unknown')} 更新信息</h3>`);
-        $popup.append(`
-            <div class="update-description">
-                <strong style="color: #666; text-align: left; display: block;">${hasUpdate ? '最新更新公告:' : '上次更新公告:'}</strong>
-                <div class="announcement-content" style="word-break: break-all; word-wrap: break-word; user-select: none; pointer-events: none; text-align: left;">${sanitizedAnnouncementText}</div>
-            </div>`);
-        $popup.append(`
-            <div class="update-description">
-                <strong style="color: #666; text-align: left; display: block;">${hasUpdate ? '最新更新地址:' : '更新地址:'}</strong>
-                <div class="link-content" style="word-break: break-all; word-wrap: break-word; text-align: left;">${sanitizedLinkAddress || (linkAddress ? '该链接地址非dc或rentry来源, 不予显示' : '无链接地址')}</div>
-            </div>`);
-        const $lorebookInfo = $(`
-            <div class="lorebook-info">
-                <strong style="color: #666; text-align: left; display: block;">角色卡绑定的世界书信息</strong>
-                <div style="margin: 8px; text-align: left; display: flex; align-items: center; justify-content: space-between;">
-                    <span id="xiaobaix-character-book">${charBookName ? utils.sanitizeContent(charBookName) : '无'}</span>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <input type="checkbox" id="xiaobaix_lorebook_info_delete" style="bottom: -3px;">
-                        <label for="xiaobaix_lorebook_info_delete" style="margin-right: 10px;">清除世界书</label>
-                    </div>
-                </div>
-            </div>
-            <hr class="sysHR" style="margin-top: 15px;">
-        `);
-        $popup.append($lorebookInfo);
-        $popup.append(`
-            <div class="update-container" style="display: flex; align-items: center; gap: 15px;">
-                <div class="update-status" style="flex: 1;">
-                    <div style="margin-top: 20px;" class="status-message ${hasUpdate ? 'status-update' : 'status-success'}">
-                        <i class="fa-solid ${hasUpdate ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i>
-                        ${hasUpdate ? '有可用更新' : '已是最新版本'}
-                    </div>
-                </div>
-                ${isValidUrl ? `
-                    <button class="menu_button" onclick="window.open('${linkAddress}', '_blank', 'noopener,noreferrer')" style="margin-top: 10px;">
-                        <i class="fa-solid fa-external-link-alt"></i>
-                        更新地址
-                    </button>
-                ` : ''}
-            </div>
-            <hr class="sysHR" style="margin-bottom: 15px;">
-        `);
-        $popup.append(`
-            <div class="update-timestamps" style="color: #666;">
-                <div><strong style="color: #666;">上次更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.currentTimestamp)}</div>
-                <div><strong style="color: #666;">最新更新时间:</strong> ${popupManager.formatSimpleDate(updateInfo?.latestTimestamp)}</div>
-            </div>
-        `);
-
-        const $buttons = $(
-            '<div class="xiaobaix-confirm-buttons">' +
-            '  <button class="xiaobaix-confirm-yes" style="background-color: var(--crimson70a);">确认</button>' +
-            '  <button class="xiaobaix-confirm-no">取消</button>' +
-            '</div>'
-        );
-        $popup.append($buttons);
-
-
-        const $modal = $('<div class="xiaobaix-confirm-modal"></div>').append(
-            $('<div class="xiaobaix-confirm-content"></div>').append($popup)
-        );
-        $('body').append($modal);
-
-        $buttons.find('.xiaobaix-confirm-yes').on('click', function () {
-            const checked = $lorebookInfo.find('#xiaobaix_lorebook_info_delete').prop('checked');
-            if (checked) {
-                const $select = $('#world_editor_select');
-                const $deleteBtn = $('#world_popup_delete');
-                if ($select.length && $deleteBtn.length) {
-                    const $option = $select.find('option').filter(function () {
-                        return $(this).text().trim() === (charBookName ? charBookName.trim() : '');
-                    });
-                    if ($option.length) {
-                        $select.val($option.val()).trigger('change');
-                        setTimeout(() => {
-                            $deleteBtn.trigger('click');
-                        }, 200);
-                    } else {
-                        utils.showToast('未找到同名世界书，请检查世界书列表', 'error');
-                    }
-                }
-                $modal.remove();
-            } else {
-                utils.showToast('请勾选删除世界书复选框', 'warning');
-            }
-        });
-        $buttons.find('.xiaobaix-confirm-no').on('click', function () {
-            $modal.remove();
-        });
-        $modal.on('click', function (e) {
-            if (e.target === this) $modal.remove();
-        });
-        $(document).on('keydown.xiaobaixconfirm', function (e) {
-            if (e.key === 'Escape') {
-                $modal.remove();
-                $(document).off('keydown.xiaobaixconfirm');
-            }
-        });
-    },
-
-    showGeneralInfoPopup: async characterName => {
-        const characterData = characterManager.getExtensionData(this_chid);
-        let cloudData = dataCache.getCloudData(this_chid);
-
-        if (!cloudData) {
-        }
-
-        await popupManager.showUpdatePopup({
-            characterId: this_chid,
-            characterName,
-            currentTimestamp: characterData?.timestamp || new Date().toISOString(),
-            latestTimestamp: cloudData?.timestamp || characterData?.timestamp || new Date().toISOString(),
-            updateNote: cloudData?.update_notice || characterData?.updateNote || '',
-            linkAddress: cloudData?.link_address || characterData?.linkAddress || ''
-        });
-    }
-};
-
-const startupManager = {
-    performStartupCheck: async () => {
-        try {
-            const boundCharacters = characterManager.getAllBound();
-            if (boundCharacters.length === 0) {
-                return;
-            }
-
-            const charactersToCheck = [];
-            const characterMap = new Map();
-
-            boundCharacters.forEach((charId, index) => {
-                const data = characterManager.getExtensionData(charId);
-                if (data?.uniqueValue && data?.nameGroup) {
-                    charactersToCheck.push({
-                        nameGroup: data.nameGroup,
-                        uniqueValue: data.uniqueValue,
-                        clientId: index,
-                        localTimestamp: data.timestamp
-                    });
-                    characterMap.set(index, charId);
-                }
-            });
-
-            if (charactersToCheck.length === 0) {
-                return;
-            }
-
-            const batchResult = await serverAPI.batchData(charactersToCheck);
-
-            if (batchResult.success && batchResult.results) {
-                const cacheMap = new Map();
-                const updates = [];
-
-                batchResult.results.forEach(result => {
-                    if (result.found && result.data) {
-                        const charId = characterMap.get(result.clientId);
-                        const localData = characterManager.getExtensionData(charId);
-
-                        cacheMap.set(charId, { serverData: result.data });
-
-                        if (result.data.timestamp && result.data.timestamp !== localData.timestamp) {
-                            const character = characterManager.getCharacter(charId);
-                            updates.push({
-                                characterId: charId,
-                                characterName: character?.name || '未知角色',
-                                currentTimestamp: localData.timestamp,
-                                latestTimestamp: result.data.timestamp,
-                                updateNote: result.data.update_notice || '无更新说明',
-                                linkAddress: result.data.link_address || '',
-                                serverData: result.data
-                            });
-                        }
-                    }
-                });
-
-                dataCache.setBatch(cacheMap);
-                $('.character-update-notification').remove();
-                updates.forEach(update => {
-                    characterListUI.addUpdateNotification(update.characterId, update);
-                });
-
-                if (this_chid != null) {
-                    const currentCharacterHasUpdate = updates.some(update => update.characterId === this_chid);
-                    characterEditUI.updateButtonState(currentCharacterHasUpdate);
-
-                    if (!currentCharacterHasUpdate && characterManager.isBound(this_chid)) {
-                        setTimeout(() => uiManager.checkCurrentCharacterUpdate(), 1000);
-                    }
-                }
-
-                console.log(`[小白X] 云端检查完成，发现 ${updates.length} 个角色有更新`);
-            }
-        } catch (error) {
-            console.error('[小白X] 云端检查失败:', error);
-        }
-    }
-};
-
-const characterEditUI = {
-    addCharacterEditButton: () => {
-        if ($('#character-updater-edit-button').length > 0) return;
-
-        const buttonHtml = `
-            <div id="character-updater-edit-button" class="menu_button fa-solid fa-cloud-arrow-down interactable"
-                 title="Check for character updates">
-            </div>
-        `;
-
-        $('.form_create_bottom_buttons_block').prepend(buttonHtml);
-
-        $('#character-updater-edit-button').on('click', async () => {
-            if (this_chid == null) {
-                utils.showToast('No character selected', 'warning');
-                return;
-            }
-
-            if (!characterManager.isBound(this_chid)) {
-                utils.showToast('Character is not bound to update service', 'warning');
-                return;
-            }
-
-            try {
-                const character = characterManager.getCharacter(this_chid);
-                await popupManager.showGeneralInfoPopup(character.name);
-            } catch (error) {
-                console.error('显示角色信息失败:', error);
-                utils.showToast('Failed to show character info', 'error');
-            }
-        });
-    },
-
-    updateButtonState: hasUpdate => {
-        $('#character-updater-edit-button').toggleClass('has-update', hasUpdate);
-    }
-};
-
-async function initCharacterUpdater() {
-    if (moduleState.isInitialized) return;
-
-    if (window.registerModuleCleanup) {
-        window.registerModuleCleanup(MODULE_NAME, cleanup);
-    }
-
-    await addMenusHTML();
-    bindEvents();
-    characterEditUI.addCharacterEditButton();
-
-    uiManager.updateDisplay();
-    moduleState.isInitialized = true;
+/* ==================== 基础工具样式 ==================== */
+.xiaobaix-iframe {
+    transition: height 0.3s ease;
 }
 
-function cleanup() {
-    Object.keys(moduleState.eventHandlers).forEach(eventType => {
-        eventSource.off(eventType, moduleState.eventHandlers[eventType]);
-    });
-    moduleState.eventHandlers = {};
-
-    $('.character-menu-overlay, #character-updater-edit-button, .character-update-notification').remove();
-    dataCache.clear();
-    moduleState.isInitialized = false;
+.xiaobaix-iframe-wrapper {
+    margin: 10px 0;
 }
 
-async function addMenusHTML() {
-    try {
-        const response = await fetch(`${extensionFolderPath}/character-updater-menus.html`);
-        if (response.ok) {
-            $('body').append(await response.text());
-        }
-    } catch (error) {
-        console.error('[小白X-角色更新] 加载菜单HTML失败:', error);
+/* ==================== 动画效果 ==================== */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+    from { transform: translateX(-100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInTop {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes popIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+/* ==================== 记忆按钮样式 ==================== */
+.mes_btn.memory-button {
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.mes_btn.memory-button:hover {
+    opacity: 1;
+}
+
+.mes_btn.memory-button.has-memory {
+    color: var(--SmartThemeAccent);
+}
+
+/* ==================== 模态框基础样式 ==================== */
+.memory-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--black30a);
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 2));
+    -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 2));
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+.memory-modal-content {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    width: 85%;
+    max-width: 700px;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0px 0px 14px var(--black70a);
+    animation: slideIn 0.3s ease;
+    color: var(--SmartThemeBodyColor);
+}
+
+.memory-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 10px 10px 0 0;
+}
+
+.memory-modal-title {
+    font-size: var(--mainFontSize);
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+}
+
+.memory-modal-close {
+    font-size: 1.2em;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    color: var(--SmartThemeBodyColor);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.memory-modal-close:hover {
+    opacity: 1;
+    background: var(--white30a);
+}
+
+.memory-tab-content {
+    padding: 8px 12px;
+    overflow-y: auto;
+    flex-grow: 1;
+    font-size: calc(var(--mainFontSize) * 0.95);
+    line-height: 1.4;
+}
+
+#memory-stats-content {
+    padding: 8px 12px;
+    overflow-y: auto;
+    flex-grow: 1;
+    font-size: calc(var(--mainFontSize) * 0.95);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.memory-modal-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 0 0 10px 10px;
+    flex-wrap: wrap;
+}
+
+.behavior-footer-left,
+.behavior-footer-right,
+.main-menu-footer-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.memory-action-button {
+    color: var(--SmartThemeBodyColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+    min-height: 28px;
+    filter: grayscale(0.3);
+}
+
+.memory-action-button:hover {
+    background-color: var(--white30a);
+    filter: grayscale(0);
+    transform: translateY(-1px);
+}
+
+.memory-action-button.secondary {
+    filter: grayscale(0.6);
+}
+
+.memory-action-button.primary {
+    background-color: var(--crimson70a);
+    color: var(--white);
+    filter: grayscale(0);
+}
+
+.memory-action-button.primary:hover {
+    background-color: var(--crimson);
+}
+
+/* ==================== 行为设置模态框 ==================== */
+.behavior-modal-content {
+    width: 90%;
+    max-width: 800px;
+    max-height: 85vh;
+}
+
+.user-settings-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--black10a);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+}
+
+.user-gender-setting {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.user-gender-setting label {
+    font-weight: 500;
+    margin-right: 10px;
+}
+
+.user-gender-select {
+    width: 120px;
+    padding: 6px 8px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.user-gender-select:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.user-aliases-setting {
+    margin-top: 15px;
+}
+
+.user-aliases-setting label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.user-aliases-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    min-height: 32px;
+    padding: 12px;
+    background: var(--black10a);
+    border-radius: 6px;
+    border: 1px dashed var(--SmartThemeBorderColor);
+}
+
+.user-alias-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+    border-radius: 16px;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.user-alias-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--black30a);
+}
+
+.alias-text {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.remove-alias {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+    opacity: 0.7;
+}
+
+.remove-alias:hover {
+    background: rgba(255, 255, 255, 0.25);
+    opacity: 1;
+}
+
+.add-alias-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.alias-input {
+    flex: 1;
+    min-width: 140px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    transition: all 0.2s ease;
+}
+
+.alias-input:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.add-alias-button {
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.add-alias-button:hover {
+    background: var(--SmartThemeAccentHover);
+    transform: translateY(-1px);
+}
+
+.setting-desc {
+    font-size: 0.85em;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.7;
+    margin-top: 5px;
+    margin-bottom: 0;
+}
+
+.tracked-names-section {
+    margin-bottom: 20px;
+}
+
+.section-desc {
+    font-size: 0.9em;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.8;
+    margin-bottom: 10px;
+}
+
+.tracked-names-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+    min-height: 32px;
+    padding: 12px;
+    background: var(--black10a);
+    border-radius: 6px;
+    border: 1px dashed var(--SmartThemeBorderColor);
+}
+
+.tracked-name-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+    border-radius: 16px;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.tracked-name-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px var(--black30a);
+}
+
+.tracked-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tracked-gender-select {
+    min-width: 100px;
+    padding: 6px 8px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    margin: 0 5px;
+}
+
+.tracked-gender-select:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.gender-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9em;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    margin-left: 5px;
+}
+
+.tracked-name-stats {
+    display: flex;
+    gap: 5px;
+    margin-left: 4px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    padding-left: 8px;
+}
+
+.initial-intimacy-value {
+    font-size: 0.85em;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+}
+
+.tracked-name-actions {
+    display: flex;
+    gap: 3px;
+    margin-left: 3px;
+}
+
+.edit-name, .remove-name {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+    opacity: 0.7;
+}
+
+.edit-name:hover, .remove-name:hover {
+    background: rgba(255, 255, 255, 0.25);
+    opacity: 1;
+}
+
+.tracked-intimacy-input {
+    width: 100px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.tracked-intimacy-input:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.add-name-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tracked-name-input {
+    flex: 1;
+    min-width: 140px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    transition: all 0.2s ease;
+}
+
+.tracked-name-input:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.add-name-button {
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+    border: 1px solid var(--SmartThemeAccent);
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.add-name-button:hover {
+    background: var(--SmartThemeAccentHover);
+    transform: translateY(-1px);
+}
+
+.behavior-stages-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 6px;
+    padding: 4px;
+}
+
+.behavior-stage-tab {
+    padding: 8px 12px;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--SmartThemeBodyColor);
+}
+
+.behavior-stage-tab:hover {
+    background: var(--white20a);
+    transform: translateY(-1px);
+}
+
+.behavior-stage-tab.active {
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 2px 8px var(--SmartThemeAccent30a);
+}
+
+.behavior-stage-content {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.behavior-stage-form {
+    padding: 20px;
+}
+
+.behavior-stage-form h3 {
+    margin: 0 0 16px 0;
+    color: var(--SmartThemeBodyColor);
+    font-size: calc(var(--mainFontSize) * 1.1);
+    font-weight: 600;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--SmartThemeAccent);
+}
+
+.stage-range {
+    font-size: 0.8em;
+    font-weight: normal;
+    opacity: 0.7;
+}
+
+.behavior-field {
+    margin-bottom: 16px;
+}
+
+.behavior-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize) * 0.95);
+    color: var(--SmartThemeBodyColor);
+}
+
+.behavior-textarea {
+    width: 100%;
+    min-height: 60px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 12px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    line-height: 1.4;
+    transition: all 0.2s ease;
+}
+
+.behavior-textarea:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+/* ==================== 编辑人物对话框 ==================== */
+.xiaobaix-edit-name-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh !important;
+    background: var(--black50a);
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 3));
+    -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 3));
+    z-index: 10002;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+.xiaobaix-edit-name-content {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 350px;
+    padding: 20px;
+    box-shadow: 0px 8px 32px var(--black70a);
+    animation: popIn 0.3s ease;
+    color: var(--SmartThemeBodyColor);
+}
+
+.xiaobaix-edit-name-content h3 {
+    margin: 0 0 16px 0;
+    text-align: center;
+    font-weight: 600;
+}
+
+.edit-name-field {
+    margin-bottom: 16px;
+}
+
+.edit-name-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+.edit-name-field input {
+    width: 100%;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    transition: all 0.2s ease;
+}
+
+.edit-name-field input:focus {
+    outline: none;
+    border-color: var(--SmartThemeAccent);
+    box-shadow: 0 0 0 2px var(--SmartThemeAccent30a);
+}
+
+.edit-name-field input[readonly] {
+    background: var(--black30a);
+    cursor: not-allowed;
+}
+
+.xiaobaix-edit-name-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.xiaobaix-edit-name-save,
+.xiaobaix-edit-name-cancel {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.xiaobaix-edit-name-save {
+    background: var(--SmartThemeAccent);
+    color: var(--SmartThemeAccentText);
+}
+
+.xiaobaix-edit-name-cancel {
+    background: var(--SmartThemeBorder);
+    color: var(--SmartThemeBodyColor);
+}
+
+.xiaobaix-edit-name-save:hover,
+.xiaobaix-edit-name-cancel:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px var(--black30a);
+}
+
+/* ==================== 确认对话框 ==================== */
+.xiaobaix-confirm-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    background: var(--black50a) !important;
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 3)) !important;
+    -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 3)) !important;
+    z-index: 99999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: fadeIn 0.2s ease !important;
+}
+
+.xiaobaix-confirm-content {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 450px;
+    padding: 20px;
+    box-shadow: 0px 8px 32px var(--black70a);
+    animation: slideIn 0.3s ease;
+    text-align: center;
+    color: var(--SmartThemeBodyColor);
+}
+
+.xiaobaix-confirm-message {
+    margin-bottom: 24px;
+    font-size: calc(var(--mainFontSize) * 1.05);
+    line-height: 1.5;
+}
+
+.xiaobaix-confirm-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.xiaobaix-confirm-yes,
+.xiaobaix-confirm-no {
+    padding: 4px 8px;
+    margin-left: 10px;
+    margin-right: 10px;
+    border: none;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.95);
+    transition: all 0.2s ease;
+    background-color: var(--SmartThemeAccent);
+}
+
+/* ==================== 统计编辑器样式 ==================== */
+.stats-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.stats-section {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    padding: 16px;
+    border-radius: 8px;
+}
+
+.stats-section h3 {
+    margin: 0 0 12px 0;
+    color: var(--SmartThemeBodyColor);
+    font-weight: 600;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    padding-bottom: 6px;
+}
+
+.stats-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.stats-field label {
+    flex: 1;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+.stats-field input {
+    width: 80px;
+    background: var(--SmartThemeInputColor);
+    color: var(--SmartThemeText);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    padding: 6px;
+    text-align: center;
+}
+
+.stats-empty-message {
+    font-style: italic;
+    opacity: 0.7;
+    text-align: center;
+    padding: 10px;
+}
+
+.stats-field .relationship-stage {
+    margin-left: 10px;
+    font-size: calc(var(--mainFontSize) * 0.85);
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+/* ==================== 调试日志模态框 ==================== */
+.debug-log-modal {
+    position: fixed !important;
+    inset: 0 !important;
+    background: var(--black50a) !important;
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 2)) !important;
+    z-index: 10000 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: fadeIn 0.3s ease !important;
+}
+
+.debug-log-content {
+    background: var(--SmartThemeBlurTintColor) !important;
+    border: 1px solid var(--SmartThemeBorderColor) !important;
+    border-radius: 10px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 0 8px 32px var(--black70a) !important;
+    color: var(--SmartThemeBodyColor) !important;
+    overflow: hidden !important;
+    animation: slideIn 0.3s ease !important;
+}
+
+.debug-log-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 16px !important;
+    border-bottom: 1px solid var(--SmartThemeBorderColor) !important;
+    flex-shrink: 0 !important;
+}
+
+.debug-log-title {
+    font-size: var(--mainFontSize) !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+}
+
+.debug-log-close {
+    font-size: 1.2em !important;
+    cursor: pointer !important;
+    opacity: 0.7 !important;
+    transition: all 0.2s ease !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+}
+
+.debug-log-close:hover {
+    opacity: 1 !important;
+    background: var(--white30a) !important;
+}
+
+.debug-log-text {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 16px !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: calc(var(--mainFontSize) * 0.85) !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+}
+
+.debug-log-footer {
+    padding: 12px 16px !important;
+    border-top: 1px solid var(--SmartThemeBorderColor) !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    gap: 10px !important;
+    flex-shrink: 0 !important;
+}
+
+.debug-log-button {
+    background: var(--SmartThemeBlurTintColor) !important;
+    color: var(--SmartThemeBodyColor) !important;
+    border: 1px solid var(--SmartThemeBorderColor) !important;
+    border-radius: 6px !important;
+    padding: 8px 16px !important;
+    cursor: pointer !important;
+    font-size: calc(var(--mainFontSize) * 0.9) !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+    min-width: 80px !important;
+}
+
+.debug-log-button:hover {
+    background: var(--white30a) !important;
+}
+
+/* ==================== 循环任务样式 ==================== */
+.task-container {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.task-container:empty::after {
+    content: "No tasks found";
+    font-size: 0.95em;
+    opacity: 0.7;
+    display: block;
+    text-align: center;
+}
+
+.scheduled-tasks-embedded-warning {
+    padding: 15px;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.warning-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px;
+    background: rgba(255, 193, 7, 0.1);
+    border-left: 3px solid #ffc107;
+    border-radius: 4px;
+}
+
+.task-item {
+    align-items: center;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    padding: 0 5px;
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+.task_name {
+    font-weight: normal;
+    color: var(--SmartThemeEmColor);
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drag-handle {
+    cursor: grab;
+    color: var(--SmartThemeQuoteColor);
+    margin-right: 8px;
+    user-select: none;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.menu_button {
+    width: fit-content;
+    display: flex;
+    gap: 10px;
+    flex-direction: row;
+}
+
+.checkbox {
+    align-items: center;
+}
+
+.task_editor {
+    width: 100%;
+}
+
+.task_editor .flex-container {
+    gap: 10px;
+}
+
+.task_editor textarea {
+    font-family: 'Courier New', monospace;
+}
+
+input.disable_task {
+    display: none !important;
+}
+
+.task-toggle-off {
+    cursor: pointer;
+    opacity: 0.5;
+    filter: grayscale(0.5);
+    transition: opacity 0.2s ease-in-out;
+}
+
+.task-toggle-off:hover {
+    opacity: 1;
+    filter: none;
+}
+
+.task-toggle-on {
+    cursor: pointer;
+}
+
+.disable_task:checked ~ .task-toggle-off {
+    display: block;
+}
+
+.disable_task:checked ~ .task-toggle-on {
+    display: none;
+}
+
+.disable_task:not(:checked) ~ .task-toggle-off {
+    display: none;
+}
+
+.disable_task:not(:checked) ~ .task-toggle-on {
+    display: block;
+}
+
+/* ==================== 沉浸式显示模式样式 ==================== */
+body.immersive-mode #chat {
+   padding: 0 !important;
+   border: 0px !important;
+   overflow-y: auto;
+   margin: 0 !important;
+}
+
+body.immersive-mode .mesAvatarWrapper,
+body.immersive-mode .timestamp,
+body.immersive-mode .swipe_left,
+body.immersive-mode .swipeRightBlock {
+   display: none !important;
+}
+
+body.immersive-mode .mes {
+   margin: 2% 0 0 0 !important;
+}
+
+body.immersive-mode .mes_text {
+   padding: 0px !important;
+   max-width: 100%;
+   width: 100%;
+}
+
+body.immersive-mode .mes {
+   width: 99%;
+   margin: 0 0.5%;
+   padding: 0px !important;
+}
+
+.immersive-navigation {
+    position: absolute;
+    transform: translateX(-50%);
+    left: 50%;
+    bottom: 5%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(51, 51, 51, 0.3);
+    border-radius: 25px;
+    width: fit-content;
+    max-width: 50%;
+    z-index: -1;
+    height: 25px;
+    box-sizing: border-box;
+}
+
+.immersive-nav-btn {
+   background: none;
+   border: none;
+   color: var(--SmartThemeBodyColor);
+   cursor: pointer;
+   border-radius: 50%;
+   transition: all 0.2s ease;
+   font-size: 12px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   min-width: 24px;
+   height: 24px;
+}
+
+.immersive-nav-btn:hover:not(:disabled) {
+   background-color: rgba(var(--SmartThemeBodyColor), 0.2);
+   transform: scale(1.1);
+}
+
+.immersive-nav-btn:disabled {
+   opacity: 0.3;
+   cursor: not-allowed;
+}
+
+/* ==================== 模板编辑器样式 ==================== */
+.xiaobai_template_editor {
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.template-replacer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.template-replacer-title {
+    font-weight: bold;
+    color: var(--SmartThemeEmColor, #007bff);
+}
+
+.template-replacer-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.template-replacer-status {
+    font-size: 12px;
+    color: var(--SmartThemeQuoteColor, #888);
+    font-style: italic;
+}
+
+.template-replacer-status.no-character {
+    color: var(--SmartThemeCheckboxBgColor, #666);
+}
+
+.example-text {
+    font-size: 0.9em;
+    color: var(--SmartThemeQuoteColor, #888);
+}
+
+.example-text p {
+    margin: 5px 0;
+    text-align: left !important;
+}
+
+.example-text strong {
+    color: var(--SmartThemeEmColor);
+}
+
+/* ==================== 消息预览插件样式 ==================== */
+#message_preview_btn {
+    width: var(--bottomFormBlockSize);
+    height: var(--bottomFormBlockSize);
+    margin: 0;
+    border: none;
+    cursor: pointer;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 300ms;
+    color: var(--SmartThemeBodyColor);
+    font-size: var(--bottomFormIconSize);
+}
+
+#message_preview_btn:hover {
+    opacity: 1;
+    filter: brightness(1.2);
+}
+
+.message-preview-content-box {
+    font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+    white-space: pre-wrap;
+    max-height: 82vh;
+    overflow-y: auto;
+    padding: 15px;
+    background: #000000 !important;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    color: #ffffff !important;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+}
+
+.mes_history_preview {
+    opacity: 0.6;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.mes_history_preview:hover {
+    opacity: 1;
+}
+
+/* ==================== auto-backgroung样式 ==================== */
+.menu-tab {
+    flex: 1;
+    padding: 2px 8px;
+    text-align: center;
+    cursor: pointer;
+    color: #ccc;
+    border: none;
+    transition: color 0.2s ease;
+    font-weight: 500;
+}
+.menu-tab:hover {
+    color: #fff;
+}
+.menu-tab.active {
+    color: #007acc;
+    border-bottom: 2px solid #007acc;
+}
+.settings-section {
+    padding: 10px 0;
+}
+.template-replacer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.template-replacer-title {
+    font-weight: bold;
+    color: #007acc;
+}
+.template-replacer-status {
+    padding: 5px 10px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+.template-replacer-status.no-character {
+    background: #4a1a1a;
+    color: #ffb3b3;
+}
+.custom-tags-container {
+    margin-top: 10px;
+}
+.custom-tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    min-height: 20px;
+    padding: 8px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    border: 1px solid #444;
+}
+.custom-tag-item {
+    display: flex;
+    align-items: center;
+    background: #007acc;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    gap: 6px;
+}
+.custom-tag-text {
+    font-weight: 500;
+}
+.custom-tag-remove {
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: bold;
+    transition: color 0.2s ease;
+}
+.custom-tag-remove:hover {
+    color: #ff6b6b;
+}
+.custom-tags-empty {
+    color: #888;
+    font-style: italic;
+    font-size: 12px;
+    text-align: center;
+    padding: 8px;
+}
+
+/* ==================== 角色卡自动更新样式 (Character Updater) ==================== */
+.littlewhitebox .current-character-info {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 10px;
+    margin: 0px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.character-update-popup .update-description {
+    margin-bottom: 15px;
+}
+
+.character-update-popup .update-description strong {
+    margin-bottom: 5px;
+    color: var(--SmartThemeBodyColor);
+}
+
+.littlewhitebox .current-character-name {
+    font-weight: 500;
+    color: var(--SmartThemeBodyColor);
+    font-size: var(--mainFontSize);
+}
+
+/* 角色列表更新通知样式 - 在角色列表页面 */
+.character-update-notification {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(46, 204, 113, 0.9);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 5px;
+    white-space: nowrap;
+}
+
+.character-update-notification:hover {
+    background: rgba(46, 204, 113, 1);
+    transform: scale(1.05);
+}
+
+.character-update-notification i {
+    font-size: 9px;
+    color: white;
+}
+
+.character-update-notification small {
+    font-size: 9px;
+    font-weight: 500;
+    color: white;
+    margin: 0;
+    opacity: 1;
+}
+
+/* 角色编辑表单按钮样式 - 在角色编辑页面 */
+#character-updater-edit-button {
+    color: var(--SmartThemeBodyColor);
+    filter: grayscale(0.5);
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: var(--animation-duration-2x);
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 5px;
+    margin: 0;
+}
+
+#character-updater-edit-button:hover:not(:disabled) {
+    filter: grayscale(0);
+    background-color: var(--SmartThemeBorderColor);
+}
+
+#character-updater-edit-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#character-updater-edit-button.has-update {
+    color: #2ecc71;
+    filter: grayscale(0);
+}
+
+#character-updater-edit-button.has-update:hover:not(:disabled) {
+    background-color: rgba(46, 204, 113, 0.2);
+    border-color: #2ecc71;
+}
+
+/* ==================== 菜单覆盖层样式 - 全局 ==================== */
+.character-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+}
+
+.character-menu-content {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength));
+}
+
+.menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 10px 10px 0 0;
+}
+
+.menu-header h3 {
+    margin: 0;
+    color: var(--SmartThemeBodyColor);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.menu-close {
+    background: none;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+}
+
+.menu-close:hover {
+    background: var(--SmartThemeBorderColor);
+}
+
+.menu-body {
+    padding: 20px;
+}
+
+.menu-footer {
+    padding: 15px 20px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 0 0 10px 10px;
+}
+
+/* ==================== UUID显示样式 ==================== */
+.uuid-display {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+.uuid-display label {
+    display: block;
+    color: var(--SmartThemeBodyColor);
+    font-weight: 500;
+    font-size: 13px;
+    margin-bottom: 5px;
+}
+
+.uuid-value {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--SmartThemeBodyColor);
+    background: rgba(0, 0, 0, 0.1);
+    padding: 5px 8px;
+    border-radius: 3px;
+    word-break: break-all;
+    display: block;
+}
+
+/* ==================== 表单组样式 ==================== */
+.menu-body .form-group {
+    margin-bottom: 15px;
+}
+
+.menu-body .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--SmartThemeBodyColor);
+    font-weight: 500;
+    font-size: 13px;
+    text-align: left;
+}
+
+.menu-body input[type="text"],
+.menu-body input[type="password"],
+.menu-body input[type="url"] {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+
+.menu-body input[type="text"]:focus,
+.menu-body input[type="password"]:focus,
+.menu-body input[type="url"]:focus {
+    outline: none;
+    border-color: var(--SmartThemeBodyColor);
+}
+
+/* ==================== 菜单按钮样式 ==================== */
+.confirm-button {
+    background: #27ae60;
+    color: white;
+    border-color: #27ae60;
+}
+
+.confirm-button:hover:not(:disabled) {
+    background: #219a52;
+    border-color: #219a52;
+}
+
+.confirm-button:disabled {
+    background: #95a5a6;
+    border-color: #95a5a6;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.silent-update-button {
+    background: #f39c12;
+    color: white;
+    border-color: #f39c12;
+}
+
+.silent-update-button:hover:not(:disabled) {
+    background: #e67e22;
+    border-color: #e67e22;
+}
+
+.silent-update-button:disabled {
+    background: #95a5a6;
+    border-color: #95a5a6;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.cancel-button {
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+}
+
+.cancel-button:hover {
+    background: var(--SmartThemeBorderColor);
+}
+
+/* ==================== 更新弹窗样式 ==================== */
+.character-update-popup {
+    padding: 20px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: var(--SmartThemeBodyColor);
+}
+
+.character-update-popup h3 {
+    margin: 0 0 15px 0;
+    color: var(--SmartThemeBodyColor);
+    font-size: 18px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    padding-bottom: 10px;
+}
+
+.character-update-popup .update-status {
+    margin-bottom: 15px;
+}
+
+.character-update-popup .update-status .status-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 5px;
+    font-weight: 500;
+}
+
+.character-update-popup .update-status .status-success {
+    background: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+    border: 1px solid #2ecc71;
+}
+
+.character-update-popup .update-status .status-success i {
+    color: #2ecc71;
+}
+
+.character-update-popup .update-status .status-update {
+    background: rgba(243, 156, 18, 0.1);
+    color: #f39c12;
+    border: 1px solid #f39c12;
+}
+
+/* ==================== 响应式样式 ==================== */
+/* 宽屏模式 - 左侧面板 */
+@media screen and (min-width: 1001px) {
+    .memory-modal.behavior-modal,
+    .memory-modal.main-menu-modal {
+        justify-content: flex-start;
+        align-items: stretch;
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        pointer-events: none;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-content,
+    .memory-modal.main-menu-modal .memory-modal-content {
+        width: calc((100vw - var(--sheldWidth) - 2px) / 2);
+        max-height: calc(100vh - var(--topBarBlockSize));
+        height: calc(100vh - var(--topBarBlockSize));
+        position: fixed;
+        top: var(--topBarBlockSize);
+        left: 0;
+        margin: 0;
+        border-radius: 0 10px 10px 0;
+        border-left: none;
+        animation: slideInLeft 0.3s ease;
+        pointer-events: all;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-header,
+    .memory-modal.main-menu-modal .memory-modal-header {
+        border-radius: 0 10px 0 0;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-footer,
+    .memory-modal.main-menu-modal .memory-modal-footer {
+        border-radius: 0 0 10px 0;
+    }
+
+    .memory-modal.behavior-modal .memory-tab-content,
+    .memory-modal.main-menu-modal .memory-tab-content {
+        max-height: calc(100vh - var(--topBarBlockSize) - 120px);
+    }
+
+    .debug-log-content {
+        width: 85% !important;
+        max-width: 900px !important;
+        max-height: 85vh !important;
+    }
+
+    /* 角色卡更新宽屏适配 */
+    .character-menu-overlay {
+        padding: 2rem;
+    }
+
+    .character-menu-content {
+        max-width: 600px;
+    }
+
+    .menu-footer {
+        justify-content: flex-end;
     }
 }
 
-function bindEvents() {
-    $(document.body).on('click', '#bind-confirm', () => menuManager.handleConfirm('bind'));
-    $(document.body).on('click', '#rebind-confirm', () => menuManager.handleConfirm('rebind'));
-    $(document.body).on('click', '#update-confirm', () => menuManager.handleConfirm('update'));
-    $(document.body).on('click', '#update-silent', () => menuManager.handleConfirm('update', true));
-
-    ['bind', 'rebind', 'update'].forEach(type => {
-        $(document.body).on('click', `#${type}-menu-close, #${type}-cancel`, () => menuManager.closeMenu(type));
-    });
-
-    $(document.body).on('click', '.character-menu-overlay', function (e) {
-        if (e.target === this) $(this).hide();
-    });
-
-    const trigger = $('#current-character-info-trigger');
-    if (trigger.length) {
-        longPressManager.start(trigger, () => uiManager.handleLongPress(), () => uiManager.handleShortPress());
+/* 平板端 */
+@media screen and (max-width: 1000px) and (min-width: 481px) {
+    .behavior-stages-selector {
+        grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+        gap: 4px;
     }
 
-    const eventHandlers = {
-        [event_types.APP_READY]: async () => {
-            await startupManager.performStartupCheck();
-        },
-        [event_types.CHAT_CHANGED]: async () => {
-            uiManager.updateDisplay();
-            if (this_chid != null && characterManager.isBound(this_chid)) {
-                await uiManager.checkCurrentCharacterUpdate();
-            }
-        },
-        [event_types.CHARACTER_EDITED]: () => uiManager.updateDisplay(),
-        [event_types.CHARACTER_PAGE_LOADED]: () => uiManager.restoreUpdateNotifications()
-    };
+    .behavior-stage-tab {
+        padding: 6px 8px;
+        font-size: calc(var(--mainFontSize) * 0.8);
+    }
 
-    Object.entries(eventHandlers).forEach(([eventType, handler]) => {
-        moduleState.eventHandlers[eventType] = handler;
-        eventSource.on(eventType, handler);
-    });
+    .memory-modal.behavior-modal .memory-modal-content,
+    .memory-modal.main-menu-modal .memory-modal-content {
+        width: 100vw !important;
+        height: calc(100vh - var(--topBarBlockSize));
+        max-width: 100vw !important;
+        max-height: calc(100vh - var(--topBarBlockSize));
+        position: fixed;
+        top: var(--topBarBlockSize);
+        left: 0;
+        margin: 0;
+        border-radius: 0 0 20px 20px;
+        border-top: none;
+        animation: slideInTop 0.3s ease;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-header,
+    .memory-modal.main-menu-modal .memory-modal-header {
+        border-radius: 0;
+        position: relative;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-close,
+    .memory-modal.main-menu-modal .memory-modal-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 1.4em;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--black30a);
+    }
+
+    .memory-modal.behavior-modal .memory-tab-content,
+    .memory-modal.main-menu-modal .memory-tab-content {
+        max-height: calc(100vh - var(--topBarBlockSize) - 140px);
+        padding: 6px 10px;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-footer,
+    .memory-modal.main-menu-modal .memory-modal-footer {
+        border-radius: 0;
+        flex-direction: row;
+        justify-content: center;
+        padding: 8px 4px;
+    }
+
+    .main-menu-footer-buttons {
+        width: 100%;
+        justify-content: space-evenly;
+        flex-direction: row;
+        flex-wrap: nowrap;
+    }
+
+    .main-menu-footer-buttons .memory-action-button {
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        padding: 6px 8px;
+        margin: 0 2px;
+        white-space: nowrap;
+    }
+
+    .tracked-name-item {
+        flex-wrap: nowrap !important;
+        padding: 8px 10px;
+        width: 100%;
+        position: relative !important;
+    }
+
+    .tracked-name-stats {
+        width: auto !important;
+        border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+        padding-left: 8px !important;
+        margin-right: 50px !important;
+    }
+
+    .tracked-name-actions {
+        position: absolute !important;
+        top: 50% !important;
+        right: 8px !important;
+        transform: translateY(-50%) !important;
+    }
+
+    .add-name-container {
+        flex-direction: column;
+    }
+
+    .tracked-intimacy-input {
+        width: 100%;
+    }
+
+    .debug-log-content {
+        width: 95% !important;
+        height: calc(100vh - var(--topBarBlockSize) - 20px) !important;
+        position: fixed !important;
+        top: calc(var(--topBarBlockSize) + 10px) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+    }
+
+    .debug-log-text {
+        padding: 12px !important;
+        font-size: calc(var(--mainFontSize) * 0.8) !important;
+    }
+
+    .immersive-navigation {
+        gap: 8px;
+        height: 30px;
+    }
+
+    .immersive-nav-btn {
+        min-width: 20px;
+        font-size: 10px;
+    }
+
+    /* 角色卡更新平板适配 */
+    .character-menu-overlay {
+        align-items: flex-start;
+        padding: 2rem 1rem;
+    }
+
+    .character-menu-content {
+        margin-top: 2rem;
+        max-height: calc(100vh - 4rem);
+        width: 100%;
+        max-width: none;
+    }
+
+    .menu-header h3 {
+        font-size: 16px;
+    }
+
+    .menu-body {
+        padding: 15px;
+    }
+
+    .menu-footer {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .menu-footer button {
+        flex: 1;
+        min-width: 100px;
+        margin: 5px;
+    }
 }
 
-export { initCharacterUpdater };
+/* 手机端 */
+@media screen and (max-width: 480px) {
+    .behavior-stages-selector {
+        grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+        gap: 4px;
+    }
+
+    .behavior-stage-tab {
+        padding: 6px 8px;
+        font-size: calc(var(--mainFontSize) * 0.8);
+    }
+
+    .memory-modal.behavior-modal .memory-modal-content,
+    .memory-modal.main-menu-modal .memory-modal-content {
+        width: 100vw !important;
+        height: calc(100vh - var(--topBarBlockSize));
+        max-width: 100vw !important;
+        max-height: calc(100vh - var(--topBarBlockSize));
+        position: fixed;
+        top: var(--topBarBlockSize);
+        left: 0;
+        margin: 0;
+        border-radius: 0 0 20px 20px;
+        border-top: none;
+        animation: slideInTop 0.3s ease;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-header,
+    .memory-modal.main-menu-modal .memory-modal-header {
+        border-radius: 0;
+        position: relative;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-close,
+    .memory-modal.main-menu-modal .memory-modal-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 1.4em;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--black30a);
+    }
+
+    .memory-modal.behavior-modal .memory-tab-content,
+    .memory-modal.main-menu-modal .memory-tab-content {
+        max-height: calc(100vh - var(--topBarBlockSize) - 140px);
+        padding: 6px 10px;
+    }
+
+    .memory-modal.behavior-modal .memory-modal-footer,
+    .memory-modal.main-menu-modal .memory-modal-footer {
+        border-radius: 0;
+        flex-direction: row;
+        justify-content: center;
+        padding: 8px 4px;
+    }
+
+    .main-menu-footer-buttons {
+        width: 100%;
+        justify-content: space-evenly;
+        flex-direction: row;
+        flex-wrap: nowrap;
+    }
+
+    .main-menu-footer-buttons .memory-action-button {
+        width: auto;
+        min-width: 0;
+        max-width: none;
+        padding: 6px 8px;
+        margin: 0 2px;
+        white-space: nowrap;
+    }
+
+    .tracked-name-item {
+        flex-wrap: nowrap !important;
+        padding: 8px 10px;
+        width: 100%;
+        position: relative !important;
+    }
+
+    .tracked-name-stats {
+        width: auto !important;
+        border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+        padding-left: 8px !important;
+        margin-right: 50px !important;
+    }
+
+    .tracked-name-actions {
+        position: absolute !important;
+        top: 50% !important;
+        right: 8px !important;
+        transform: translateY(-50%) !important;
+    }
+
+    .add-name-container {
+        flex-direction: column;
+    }
+
+    .tracked-intimacy-input {
+        width: 100%;
+    }
+
+    .user-gender-setting {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .user-gender-setting label {
+        margin-bottom: 6px;
+    }
+
+    .user-gender-select {
+        width: 100%;
+    }
+
+    .add-alias-container {
+        flex-direction: column;
+    }
+
+    .alias-input,
+    .add-alias-button {
+        width: 100%;
+    }
+
+    .tracked-gender-select {
+        width: 100%;
+        margin: 5px 0;
+    }
+
+    .debug-log-content {
+        width: 100vw !important;
+        height: calc(100vh - var(--topBarBlockSize)) !important;
+        position: fixed !important;
+        top: var(--topBarBlockSize) !important;
+        left: 0 !important;
+        border-radius: 0 0 20px 20px !important;
+        border-top: none !important;
+        animation: slideInTop 0.3s ease !important;
+    }
+
+    .debug-log-close {
+        position: absolute !important;
+        top: 8px !important;
+        right: 8px !important;
+        width: 32px !important;
+        height: 32px !important;
+        border-radius: 50% !important;
+        background: var(--black30a) !important;
+    }
+
+    .debug-log-text {
+        padding: 10px !important;
+        font-size: calc(var(--mainFontSize) * 0.75) !important;
+    }
+
+    .debug-log-footer {
+        justify-content: space-between !important;
+        padding: 10px 16px !important;
+    }
+
+    .debug-log-button {
+        flex: 1 !important;
+        padding: 10px 12px !important;
+    }
+
+    .immersive-navigation {
+        gap: 8px;
+        height: 30px;
+    }
+
+    .immersive-nav-btn {
+        min-width: 20px;
+        font-size: 10px;
+    }
+
+    /* 角色卡更新手机适配 */
+    .character-menu-overlay {
+        align-items: flex-start;
+        padding: 0;
+    }
+
+    .character-menu-content {
+        margin-top: 0;
+        max-height: 100vh;
+        width: 100%;
+        max-width: none;
+        border-radius: 0;
+    }
+
+    .menu-header h3 {
+        font-size: 16px;
+    }
+
+    .menu-body {
+        padding: 15px;
+    }
+
+    .menu-footer {
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 10px;
+    }
+
+    .menu-footer button {
+        flex: 1 1 45%;
+        margin: 5px;
+        min-width: auto;
+    }
+}
+
+/* ==================== 滚动条样式 ==================== */
+.memory-tab-content::-webkit-scrollbar,
+.debug-log-text::-webkit-scrollbar,
+.message-preview-content-box::-webkit-scrollbar,
+.xiaobai_template_editor::-webkit-scrollbar {
+    width: 6px;
+}
+
+.memory-tab-content::-webkit-scrollbar-track,
+.debug-log-text::-webkit-scrollbar-track,
+.message-preview-content-box::-webkit-scrollbar-track,
+.xiaobai_template_editor::-webkit-scrollbar-track {
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 3px;
+}
+
+.memory-tab-content::-webkit-scrollbar-thumb,
+.debug-log-text::-webkit-scrollbar-thumb,
+.message-preview-content-box::-webkit-scrollbar-thumb,
+.xiaobai_template_editor::-webkit-scrollbar-thumb {
+    background: var(--SmartThemeBorderColor);
+    border-radius: 3px;
+}
+
+.memory-tab-content::-webkit-scrollbar-thumb:hover,
+.debug-log-text::-webkit-scrollbar-thumb:hover,
+.message-preview-content-box::-webkit-scrollbar-thumb:hover,
+.xiaobai_template_editor::-webkit-scrollbar-thumb:hover {
+    background: var(--SmartThemeAccent);
+}
