@@ -728,7 +728,7 @@ function registerSlashCommands() {
             callback: async (args, value) => {
                 if (!value) return '请提供任务名称。用法: /xbqte 任务名称';
                 try {
-                    return await window.executeScheduledTaskByName(value);
+                    return await window.xbqte(value);
                 } catch (error) {
                     return `错误: ${error.message}`;
                 }
