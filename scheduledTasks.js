@@ -135,12 +135,113 @@ async function executeCommands(commands, taskName) {
     isCommandGenerated = true;
     isExecutingTask = true;
     try {
-        return await executeSlashCommand(commands);
+        return await processTaskCommands(commands);
     } finally {
         setTimeout(() => {
             isCommandGenerated = false;
             isExecutingTask = false;
         }, 500);
+    }
+}
+
+async function processTaskCommands(commands) {
+    const jsTagRegex = /<<taskjs>>([\s\S]*?)<<\/taskjs>>/g;
+    let lastIndex = 0;
+    let result = null;
+
+    let match;
+    while ((match = jsTagRegex.exec(commands)) !== null) {
+        const beforeJs = commands.slice(lastIndex, match.index).trim();
+        if (beforeJs) {
+            result = await executeSlashCommand(beforeJs);
+        }
+
+        const jsCode = match[1].trim();
+        if (jsCode) {
+            try {
+                await executeTaskJS(jsCode);
+            } catch (error) {
+                console.error(`[任务JS执行错误] ${error.message}`);
+            }
+        }
+
+        lastIndex = match.index + match[0].length;
+    }
+
+    const remaining = commands.slice(lastIndex).trim();
+    if (remaining) {
+        result = await executeSlashCommand(remaining);
+    }
+
+    if (lastIndex === 0) {
+        result = await executeSlashCommand(commands);
+    }
+
+    return result;
+}
+
+async function executeTaskJS(jsCode) {
+    const STscript = async (command) => {
+        if (!command) return { error: "命令为空" };
+        if (!command.startsWith('/')) command = '/' + command;
+        return await executeSlashCommand(command);
+    };
+
+    const iframes = document.querySelectorAll('iframe.xiaobaix-iframe');
+
+    if (iframes.length > 0) {
+        const latestIframe = iframes[iframes.length - 1];
+        if (latestIframe && latestIframe.contentWindow) {
+            try {
+                latestIframe.contentWindow.STscript = STscript;
+
+                const executeFunction = `
+                    (async function() {
+                        try {
+                            ${jsCode}
+                        } catch (error) {
+                            console.error('Task JS Error:', error);
+                            throw error;
+                        }
+                    })();
+                `;
+
+                await latestIframe.contentWindow.eval(executeFunction);
+                return;
+            } catch (error) {
+                console.error('IFRAME JS执行失败:', error);
+            }
+        }
+    }
+
+    try {
+        const executeFunction = new Function('STscript', `
+            return (async function() {
+                ${jsCode}
+            })();
+        `);
+
+        await executeFunction(STscript);
+    } catch (error) {
+        console.error('主窗口JS执行失败:', error);
+        throw error;
+    }
+}
+
+function handleTaskMessage(event) {
+    if (!event.data || event.data.source !== 'xiaobaix-iframe') return;
+
+    const { type } = event.data;
+
+    if (type === 'executeTaskJS') {
+        try {
+            const script = document.createElement('script');
+            script.textContent = event.data.code;
+            event.source.document.head.appendChild(script);
+            event.source.document.head.removeChild(script);
+        } catch (error) {
+            console.error('执行任务JS失败:', error);
+        }
     }
 }
 
@@ -438,11 +539,7 @@ function deleteTask(index, type) {
     });
 }
 
-async function testAllTasks() {
-    for (const task of [...getSettings().globalTasks, ...getCharacterTasks()]) {
-        if (!task.disabled) await executeCommands(task.commands, task.name);
-    }
-}
+
 
 function getAllTaskNames() {
     return [...getSettings().globalTasks, ...getCharacterTasks()]
@@ -490,18 +587,17 @@ async function checkEmbeddedTasks() {
     refreshTaskLists();
 }
 
-async function exportCharacterTasks() {
-    if (!this_chid || !characters[this_chid]) return;
-    const tasks = getCharacterTasks();
+async function exportGlobalTasks() {
+    const settings = getSettings();
+    const tasks = settings.globalTasks;
     if (tasks.length === 0) return;
-    const characterName = characters[this_chid].name;
-    const fileName = `${characterName.replace(/[\s.<>:"/\\|?*\x00-\x1F\x7F]/g, '_').toLowerCase()}_tasks.json`;
-    const fileData = JSON.stringify({ character: characterName, exportDate: new Date().toISOString(), tasks }, null, 4);
+    const fileName = `global_tasks_${new Date().toISOString().split('T')[0]}.json`;
+    const fileData = JSON.stringify({ type: 'global', exportDate: new Date().toISOString(), tasks }, null, 4);
     download(fileData, fileName, 'application/json');
 }
 
-async function importCharacterTasks(file) {
-    if (!file || !this_chid || !characters[this_chid]) return;
+async function importGlobalTasks(file) {
+    if (!file) return;
     try {
         const fileText = await getFileText(file);
         const importData = JSON.parse(fileText);
@@ -511,7 +607,9 @@ async function importCharacterTasks(file) {
             id: uuidv4(),
             importedAt: new Date().toISOString()
         }));
-        await saveCharacterTasks([...getCharacterTasks(), ...tasksToImport]);
+        const settings = getSettings();
+        settings.globalTasks = [...settings.globalTasks, ...tasksToImport];
+        debouncedSave();
         refreshTaskLists();
     } catch (error) {
         console.error('任务导入失败:', error);
@@ -566,6 +664,8 @@ function cleanup() {
     eventSource.removeListener(event_types.MESSAGE_SWIPED);
     eventSource.removeListener(event_types.CHARACTER_DELETED);
 
+    window.removeEventListener('message', handleTaskMessage);
+
     $(window).off('beforeunload', cleanup);
 }
 
@@ -582,6 +682,15 @@ window.executeScheduledTaskByName = async (name) => {
     setTaskCooldown(task.name);
     const result = await executeCommands(task.commands, task.name);
     return result || `已执行任务: ${task.name}`;
+};
+
+window.executeXbTask = async (name) => {
+    try {
+        return await window.executeScheduledTaskByName(name);
+    } catch (error) {
+        console.error(`执行任务失败: ${error.message}`);
+        throw error;
+    }
 };
 
 window.setScheduledTaskInterval = async (name, interval) => {
@@ -676,6 +785,8 @@ function initTasks() {
         window.registerModuleCleanup('scheduledTasks', cleanup);
     }
 
+    window.addEventListener('message', handleTaskMessage);
+
     $('#scheduled_tasks_enabled').on('input', e => {
 
         const globalEnabled = window.isXiaobaixEnabled !== undefined ? window.isXiaobaixEnabled : true;
@@ -691,13 +802,12 @@ function initTasks() {
     });
     $('#add_global_task').on('click', () => showTaskEditor(null, false, false));
     $('#add_character_task').on('click', () => showTaskEditor(null, false, true));
-    $('#test_all_tasks').on('click', testAllTasks);
-    $('#export_character_tasks').on('click', exportCharacterTasks);
-    $('#import_character_tasks').on('click', () => $('#import_tasks_file').trigger('click'));
+    $('#export_global_tasks').on('click', exportGlobalTasks);
+    $('#import_global_tasks').on('click', () => $('#import_tasks_file').trigger('click'));
     $('#import_tasks_file').on('change', function(e) {
         const file = e.target.files[0];
         if (file) {
-            importCharacterTasks(file);
+            importGlobalTasks(file);
             $(this).val('');
         }
     });

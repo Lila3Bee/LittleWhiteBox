@@ -123,37 +123,33 @@
                             <i class="fa-solid fa-user-plus"></i>
                             <small>+ 角色</small>
                         </div>
-                        <div id="test_all_tasks" class="menu_button menu_button_icon" title="测试所有任务">
-                            <i class="fa-solid fa-play"></i>
-                            <small>测试全部</small>
-                        </div>
                     </div>
                     <div id="global_tasks_block" class="padding5">
-                        <div>
+                        <div class="flex-container alignItemsCenter">
                             <strong>全局任务</strong>
+                            <div class="flex-container">
+                                <div id="export_global_tasks" class="menu_button menu_button_icon" title="导出全局任务">
+                                    <i class="fa-solid fa-download"></i>
+                                    <small>导出</small>
+                                </div>
+                                <div id="import_global_tasks" class="menu_button menu_button_icon" title="导入全局任务">
+                                    <i class="fa-solid fa-upload"></i>
+                                    <small>导入</small>
+                                </div>
+                            </div>
                         </div>
                         <small>这些任务在所有角色中的聊天都会执行</small>
                         <div id="global_tasks_list" class="flex-container task-container flexFlowColumn"></div>
                     </div>
                     <hr />
                     <div id="character_tasks_block" class="padding5">
-                        <div class="flex-container alignItemsCenter">
+                        <div>
                             <strong>角色任务</strong>
-                            <div class="flex-container">
-                                <div id="export_character_tasks" class="menu_button menu_button_icon" title="导出角色任务">
-                                    <i class="fa-solid fa-download"></i>
-                                    <small>导出</small>
-                                </div>
-                                <div id="import_character_tasks" class="menu_button menu_button_icon" title="导入角色任务">
-                                    <i class="fa-solid fa-upload"></i>
-                                    <small>导入</small>
-                                </div>
-                            </div>
                         </div>
                         <small>这些任务只在当前角色的聊天中执行</small>
                         <div id="character_tasks_list" class="flex-container task-container flexFlowColumn"></div>
-                        <input type="file" id="import_tasks_file" accept=".json" style="display: none;" />
                     </div>
+                    <input type="file" id="import_tasks_file" accept=".json" style="display: none;" />
                     <hr class="sysHR">
                 </div>
                 <div class="template settings-section" style="display: none;">
