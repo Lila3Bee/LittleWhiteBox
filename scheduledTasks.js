@@ -669,24 +669,20 @@ function cleanup() {
     $(window).off('beforeunload', cleanup);
 }
 
-window.executeScheduledTaskByName = async (name) => {
-    if (!name?.trim()) throw new Error('请提供任务名称');
-    const task = [...getSettings().globalTasks, ...getCharacterTasks()]
-        .find(t => t.name.toLowerCase() === name.toLowerCase());
-    if (!task) throw new Error(`找不到名为 "${name}" 的任务`);
-    if (task.disabled) throw new Error(`任务 "${name}" 已被禁用`);
-    if (isTaskInCooldown(task.name)) {
-        const cooldownStatus = getTaskCooldownStatus()[task.name];
-        throw new Error(`任务 "${name}" 仍在冷却中，剩余 ${cooldownStatus.remainingCooldown}ms`);
-    }
-    setTaskCooldown(task.name);
-    const result = await executeCommands(task.commands, task.name);
-    return result || `已执行任务: ${task.name}`;
-};
-
-window.executeXbTask = async (name) => {
+window.xbqte = async (name) => {
     try {
-        return await window.executeScheduledTaskByName(name);
+        if (!name?.trim()) throw new Error('请提供任务名称');
+        const task = [...getSettings().globalTasks, ...getCharacterTasks()]
+            .find(t => t.name.toLowerCase() === name.toLowerCase());
+        if (!task) throw new Error(`找不到名为 "${name}" 的任务`);
+        if (task.disabled) throw new Error(`任务 "${name}" 已被禁用`);
+        if (isTaskInCooldown(task.name)) {
+            const cooldownStatus = getTaskCooldownStatus()[task.name];
+            throw new Error(`任务 "${name}" 仍在冷却中，剩余 ${cooldownStatus.remainingCooldown}ms`);
+        }
+        setTaskCooldown(task.name);
+        const result = await executeCommands(task.commands, task.name);
+        return result || `已执行任务: ${task.name}`;
     } catch (error) {
         console.error(`执行任务失败: ${error.message}`);
         throw error;
