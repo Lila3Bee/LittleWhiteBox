@@ -1084,7 +1084,10 @@ body.immersive-mode #chat {
    padding: 0 !important;
    border: 0px !important;
    overflow-y: auto;
-   margin: 0 !important;
+   margin: 0 0px -24px 4px !important;
+    scrollbar-width: thin;
+    scrollbar-gutter: auto;
+    overflow: auto;
 }
 
 body.immersive-mode .mesAvatarWrapper,
@@ -1095,12 +1098,12 @@ body.immersive-mode .swipeRightBlock {
 }
 
 body.immersive-mode .mes {
-   margin: 2% 0 0 0 !important;
+   margin: 2% 0 5% 0 !important;
 }
 
 body.immersive-mode .mes_block {
    padding-left: 0 !important;
-   margin: 0 !important;
+   margin: 0 0 5px 0 !important;
 }
 
 body.immersive-mode .mes_text {
@@ -1116,10 +1119,11 @@ body.immersive-mode .mes {
 }
 
 .immersive-navigation {
-    position: absolute;
-    transform: translateX(-50%);
+    position: sticky;
     left: 50%;
-    bottom: 5%;
+    transform: translateX(-50%);
+    bottom: 0;
+    margin-top: auto;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1127,25 +1131,30 @@ body.immersive-mode .mes {
     border-radius: 25px;
     width: fit-content;
     max-width: 50%;
-    z-index: -1;
+    z-index: 1000;
     height: 25px;
     box-sizing: border-box;
 }
 
 .immersive-nav-btn {
-   background: none;
-   border: none;
-   color: var(--SmartThemeBodyColor);
-   cursor: pointer;
-   border-radius: 50%;
-   transition: all 0.2s ease;
-   font-size: 12px;
-   display: flex;
-   align-items: center;
-   justify-content: center;
-   min-width: 24px;
-   height: 24px;
+    background: none;
+    border: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    margin: 0 20px;
+    white-space: nowrap;
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
 }
+
 
 .immersive-nav-btn:hover:not(:disabled) {
    background-color: rgba(var(--SmartThemeBodyColor), 0.2);
@@ -1155,6 +1164,11 @@ body.immersive-mode .mes {
 .immersive-nav-btn:disabled {
    opacity: 0.3;
    cursor: not-allowed;
+}
+
+body.immersive-mode #chat::-webkit-scrollbar {
+    width: 0.5rem;
+    position: absolute; /* 让滚动条悬浮 */
 }
 
 /* ==================== 模板编辑器样式 ==================== */
@@ -1994,16 +2008,6 @@ body.immersive-mode .mes {
         font-size: calc(var(--mainFontSize) * 0.8) !important;
     }
 
-    .immersive-navigation {
-        gap: 8px;
-        height: 30px;
-    }
-
-    .immersive-nav-btn {
-        min-width: 20px;
-        font-size: 10px;
-    }
-
     /* 角色卡更新平板适配 */
     .character-menu-overlay {
         align-items: flex-start;
@@ -2207,10 +2211,6 @@ body.immersive-mode .mes {
         padding: 10px 12px !important;
     }
 
-    .immersive-navigation {
-        gap: 8px;
-        height: 30px;
-    }
 
     .immersive-nav-btn {
         min-width: 20px;
@@ -2257,7 +2257,7 @@ body.immersive-mode .mes {
 .debug-log-text::-webkit-scrollbar,
 .message-preview-content-box::-webkit-scrollbar,
 .xiaobai_template_editor::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
 }
 
 .memory-tab-content::-webkit-scrollbar-track,
