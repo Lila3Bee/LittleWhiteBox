@@ -268,18 +268,18 @@ function showNavigationButtons() {
         const navigationHtml = `
             <div id="immersive-navigation" class="immersive-navigation">
                 <button id="immersive-swipe-left" class="immersive-nav-btn" title="左滑消息">
-                    <i class="fa-solid fa-chevron-left"></i>
+                    <i class="fa-solid fa-chevron-left"></i> 左滑
                 </button>
                 <button id="immersive-toggle" class="immersive-nav-btn" title="切换显示模式">
-                    <i class="fa-solid fa-expand"></i>
+                    历史 <i class="fa-solid fa-expand"></i> 楼层
                 </button>
                 <button id="immersive-swipe-right" class="immersive-nav-btn" title="右滑消息">
-                    <i class="fa-solid fa-chevron-right"></i>
+                    右滑 <i class="fa-solid fa-chevron-right"></i>
                 </button>
             </div>
         `;
 
-        $('#form_sheld').append(navigationHtml);
+        $('#form_sheld').before(navigationHtml);
 
         const navActions = {
             '#immersive-swipe-left': () => handleSwipe('.swipe_left'),
@@ -294,6 +294,7 @@ function showNavigationButtons() {
 
     updateNavigationButtons();
 }
+
 
 
 function hideNavigationButtons() {
